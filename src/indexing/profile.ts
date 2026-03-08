@@ -1,6 +1,6 @@
 import { getEmbedModel } from "./embedder.js";
 
-export const CHUNKER_VERSION = "boundary-v1";
+export const CHUNKER_VERSION = "boundary-v2";
 export const INDEX_SCHEMA_VERSION = "2";
 
 export interface IndexProfile {

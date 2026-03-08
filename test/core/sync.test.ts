@@ -27,7 +27,7 @@ vi.mock("../../src/indexing/chunker.js", () => ({
 const mockEmbed = vi.fn();
 vi.mock("../../src/indexing/embedder.js", () => ({
   embed: (...args: unknown[]) => mockEmbed(...args),
-  getEmbedModel: () => "nomic-embed-text",
+  getEmbedModel: () => "nomic-ai/nomic-embed-text-v1.5",
   EMBED_BATCH_SIZE: 128,
 }));
 
@@ -102,8 +102,8 @@ beforeEach(() => {
     changedChunkTexts: ["chunk text"],
     forcedFullSync: false,
     indexProfile: {
-      embed_model: "nomic-embed-text",
-      chunker_version: "boundary-v1",
+      embed_model: "nomic-ai/nomic-embed-text-v1.5",
+      chunker_version: "boundary-v2",
       index_schema_version: "2",
     },
   });
@@ -161,8 +161,8 @@ describe("syncResource", () => {
       changedChunkTexts: [],
       forcedFullSync: false,
       indexProfile: {
-        embed_model: "nomic-embed-text",
-        chunker_version: "boundary-v1",
+        embed_model: "nomic-ai/nomic-embed-text-v1.5",
+        chunker_version: "boundary-v2",
         index_schema_version: "2",
       },
     });
@@ -184,8 +184,8 @@ describe("syncResource", () => {
       changedChunkTexts: ["chunk text"],
       forcedFullSync: true,
       indexProfile: {
-        embed_model: "nomic-embed-text",
-        chunker_version: "boundary-v1",
+        embed_model: "nomic-ai/nomic-embed-text-v1.5",
+        chunker_version: "boundary-v2",
         index_schema_version: "2",
       },
     });
@@ -202,8 +202,8 @@ describe("syncResource", () => {
     expect(mockUpdateResource).toHaveBeenCalledWith(
       expect.objectContaining({
         index_profile: {
-          embed_model: "nomic-embed-text",
-          chunker_version: "boundary-v1",
+          embed_model: "nomic-ai/nomic-embed-text-v1.5",
+          chunker_version: "boundary-v2",
           index_schema_version: "2",
         },
       }),

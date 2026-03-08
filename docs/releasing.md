@@ -38,3 +38,5 @@ git push origin v0.1.0-alpha.1
 ```bash
 npm install -g @denguinho/rex@alpha
 ```
+
+Rex uses `node-llama-cpp` for local embeddings (Metal GPU on Apple Silicon via llama.cpp). The GGUF model (`nomic-ai/nomic-embed-text-v1.5-GGUF` Q8_0, ~140 MB) downloads automatically to node-llama-cpp's cache on first `embed()` call. No manual setup required.

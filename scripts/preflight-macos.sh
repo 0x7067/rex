@@ -13,6 +13,10 @@ pass() {
   printf '[pass] %s\n' "$1"
 }
 
+note() {
+  printf '[note] %s\n' "$1"
+}
+
 fail() {
   printf '[fail] %s\n' "$1"
   FAILURES=$((FAILURES + 1))
@@ -43,16 +47,17 @@ fi
 
 check_command "npm" "npm is available." "npm is missing from PATH."
 check_command "claude" "Claude Code CLI is available." "Claude Code CLI is missing from PATH."
-check_command "ollama" "Ollama CLI is available." "Ollama CLI is missing from PATH."
 
 if command -v ollama >/dev/null 2>&1; then
   if ! OLLAMA_LIST="$(ollama list 2>/dev/null)"; then
-    fail "Ollama is installed, but the local service is unreachable. Start Ollama and try again."
+    note "Ollama is installed, but the local service is unreachable. Start Ollama if you want the Ollama answer-provider path."
   elif printf '%s\n' "$OLLAMA_LIST" | grep -q 'nomic-embed-text'; then
-    pass "Ollama has the nomic-embed-text embedding model."
+    pass "Ollama has the nomic-embed-text model available for the Ollama answer-provider path."
   else
-    fail "Ollama is installed, but nomic-embed-text is missing. Run: ollama pull nomic-embed-text"
+    note "Ollama is installed, but nomic-embed-text is missing. Run: ollama pull nomic-embed-text if you want the Ollama answer-provider path."
   fi
+else
+  note "Ollama is optional for the default onboarding path."
 fi
 
 if mkdir -p "$REX_HOME_DIR" && touch "$REX_HOME_DIR/.write-test"; then
@@ -67,7 +72,6 @@ if [[ "$FAILURES" -eq 0 ]]; then
   echo "Preflight passed."
   echo "Next steps:"
   echo "  npm install -g @denguinho/rex@alpha"
-  echo "  rex connect claude"
   echo "  rex add ./some-project"
   echo '  rex ask "How does the sync pipeline work?"'
 else

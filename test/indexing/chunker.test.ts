@@ -89,6 +89,17 @@ describe("chunkText", () => {
     expect(chunks[0]?.end_line).toBe(4);
   });
 
+  it("keeps chunks within MAX_CHUNK_TOKENS*CHARS_PER_TOKEN chars for dense (zero-whitespace) input", () => {
+    // 850 * 4 = 3400 chars max per chunk; dense minified text has no boundaries
+    const denseText = "x".repeat(10_000);
+    const entry = makeEntry("dense.js", "/tmp/dense.js");
+    const chunks = chunkText(denseText, entry, RESOURCE_ID, RESOURCE_NAME, FINGERPRINT);
+    const MAX_CHARS = 850 * 4;
+    for (const chunk of chunks) {
+      expect(chunk.text.length).toBeLessThanOrEqual(MAX_CHARS);
+    }
+  });
+
   it("prefers strong boundaries and avoids overlap on function splits", () => {
     const entry = makeEntry("src/boundaries.ts", "/tmp/src/boundaries.ts");
     const alphaBody = "a".repeat(2200);

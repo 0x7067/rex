@@ -1,52 +1,64 @@
-/**
- * Embedder: uses Ollama's /api/embed endpoint for local inference.
- * Override endpoint/model via REX_OLLAMA_ENDPOINT and REX_EMBED_MODEL env vars.
- */
+import {
+  getLlama,
+  LlamaLogLevel,
+  type LlamaEmbeddingContext,
+  type LlamaModel,
+} from "node-llama-cpp";
 
 export { EMBED_BATCH_SIZE } from "./embed-options.js";
 
-const OLLAMA_ENDPOINT =
-  process.env["REX_OLLAMA_ENDPOINT"] ?? "http://localhost:11434";
-const OLLAMA_EMBED_MODEL =
-  process.env["REX_EMBED_MODEL"] ?? "nomic-embed-text";
+const EMBED_MODEL = process.env["REX_EMBED_MODEL"] ?? "nomic-ai/nomic-embed-text-v1.5";
+const GGUF_SOURCE =
+  process.env["REX_GGUF_SOURCE"] ?? "hf:nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0";
+const EMBED_CONTEXT_SIZE = 4096;
 
-export function getEmbedModel(): string {
-  return OLLAMA_EMBED_MODEL;
+let model: LlamaModel | null = null;
+let ctx: LlamaEmbeddingContext | null = null;
+
+async function getModel(): Promise<LlamaModel> {
+  if (!model) {
+    const { resolveModelFile } = await import("node-llama-cpp");
+    const llama = await getLlama({ logLevel: LlamaLogLevel.error });
+    const modelPath = await resolveModelFile(GGUF_SOURCE);
+    model = await llama.loadModel({ modelPath });
+  }
+  return model;
 }
 
-export function getEmbedEndpoint(): string {
-  return OLLAMA_ENDPOINT;
+export function getEmbedModel(): string {
+  return EMBED_MODEL;
+}
+
+export function getEmbedContextSize(): number {
+  return EMBED_CONTEXT_SIZE;
+}
+
+export async function countTokens(text: string): Promise<number> {
+  if (text.length === 0) return 0;
+  const loadedModel = await getModel();
+  return loadedModel.tokenize(text).length;
+}
+
+async function getContext(): Promise<LlamaEmbeddingContext> {
+  if (!ctx) {
+    const loadedModel = await getModel();
+    ctx = await loadedModel.createEmbeddingContext({ contextSize: EMBED_CONTEXT_SIZE });
+  }
+  return ctx;
 }
 
 export async function embed(texts: string[]): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-
-  let response: Response;
-  try {
-    response = await fetch(`${OLLAMA_ENDPOINT}/api/embed`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: OLLAMA_EMBED_MODEL, input: texts }),
-    });
-  } catch (err) {
-    throw new Error(
-      `Ollama is not running or unreachable at ${OLLAMA_ENDPOINT}. ` +
-      `Start Ollama and try again. (${err instanceof Error ? err.message : String(err)})`,
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Ollama embed failed: HTTP ${response.status} ${await response.text()}`,
-    );
-  }
-
-  const data = (await response.json()) as { embeddings: number[][] };
-  return data.embeddings.map((vec) => new Float32Array(vec));
+  const embeddingCtx = await getContext();
+  const results = await Promise.all(texts.map((t) => embeddingCtx.getEmbeddingFor(t)));
+  return results.map((r) => new Float32Array(r.vector));
 }
 
 export async function embedOne(text: string): Promise<Float32Array> {
-  const [vec] = await embed([text]);
-  if (!vec) throw new Error("Embedding returned no results");
-  return vec;
+  const embeddingCtx = await getContext();
+  const result = await embeddingCtx.getEmbeddingFor(text);
+  if (!result.vector || result.vector.length === 0) {
+    throw new Error("Embedding returned no results");
+  }
+  return new Float32Array(result.vector);
 }

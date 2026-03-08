@@ -64,6 +64,25 @@ describe("enumerate", () => {
     expect(entries.every((e) => !e.relativePath.endsWith(".test.ts"))).toBe(true);
   });
 
+  it("excludes minified and generated files by default", async () => {
+    writeFile("src/app.js", "const x = 1");
+    writeFile("src/vendor.min.js", "minified");
+    writeFile("src/styles.min.css", "minified");
+    writeFile("src/mod.min.mjs", "minified");
+    writeFile("src/app.js.map", "sourcemap");
+    writeFile("src/bundle.bundle.js", "bundled");
+    writeFile("src/chunk.bundle.mjs", "bundled");
+    const entries = await collect(enumerate(tmpDir, [], []));
+    const paths = entries.map((e) => e.relativePath);
+    expect(paths).toContain("src/app.js");
+    expect(paths.every((p) => !p.endsWith(".min.js"))).toBe(true);
+    expect(paths.every((p) => !p.endsWith(".min.css"))).toBe(true);
+    expect(paths.every((p) => !p.endsWith(".min.mjs"))).toBe(true);
+    expect(paths.every((p) => !p.endsWith(".map"))).toBe(true);
+    expect(paths.every((p) => !p.endsWith(".bundle.js"))).toBe(true);
+    expect(paths.every((p) => !p.endsWith(".bundle.mjs"))).toBe(true);
+  });
+
   it("skips binary files (.png)", async () => {
     writeFile("image.png", "fake binary");
     writeFile("code.ts", "");

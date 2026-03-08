@@ -163,4 +163,57 @@ describe("registerAsk", () => {
 
     logSpy.mockRestore();
   });
+
+  it("passes split retrieval chunks through to answer generation", async () => {
+    mockGetProvider.mockReturnValue({ name: "ollama", model: null, endpoint: null });
+    mockListResources.mockReturnValue([
+      { id: "r1", name: "ravn", last_sync_status: "ok" },
+    ]);
+    const retrievedChunks = [
+      {
+        resource_id: "r1",
+        resource_name: "ravn",
+        file_path: "src/dense.ts",
+        chunk_index: 0,
+        start_line: 1,
+        end_line: 10,
+        text: "first chunk",
+        score: 0.1,
+      },
+      {
+        resource_id: "r1",
+        resource_name: "ravn",
+        file_path: "src/dense.ts",
+        chunk_index: 1,
+        start_line: 11,
+        end_line: 20,
+        text: "second chunk",
+        score: 0.11,
+      },
+    ];
+    mockRetrieve.mockResolvedValue(retrievedChunks);
+    mockGenerateAnswer.mockResolvedValue({
+      answer: "Split chunks still answer correctly.",
+      sources: [],
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const program = new Command();
+    program.option("--json");
+    registerAsk(program);
+
+    await program.parseAsync(["ask", "what is in the dense file"], { from: "user" });
+
+    expect(mockGenerateAnswer).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Array),
+      retrievedChunks,
+      "what is in the dense file",
+      { name: "ollama", model: null, endpoint: null },
+      expect.objectContaining({ profile: "clean" }),
+    );
+
+    logSpy.mockRestore();
+  });
 });

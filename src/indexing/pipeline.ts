@@ -6,7 +6,7 @@ import { type Resource } from "../core/resource.js";
 import { getCachedEmbedding, setCachedEmbedding } from "./cache.js";
 import { chunkText, type Chunk } from "./chunker.js";
 import { createEmbedBatches, formatBatchProgress, formatEmbedSummary } from "./embed-options.js";
-import { embed, getEmbedModel } from "./embedder.js";
+import { countTokens, embed, getEmbedContextSize, getEmbedModel } from "./embedder.js";
 import { getCurrentIndexProfile, sameIndexProfile } from "./profile.js";
 import {
   deleteChunks,
@@ -23,6 +23,9 @@ export interface IndexResourceFilesResult {
   forcedFullSync: boolean;
   indexProfile: ReturnType<typeof getCurrentIndexProfile>;
 }
+
+const TOKEN_SPLIT_HEADROOM = 128;
+const MIN_SPLIT_CHARS = 64;
 
 export async function indexResourceFiles(opts: {
   resource: Resource;
@@ -61,13 +64,21 @@ export async function indexResourceFiles(opts: {
     filesScanned++;
     currentPaths.add(entry.relativePath);
 
-    const prepared = prepareChunksForEntry(entry, resource.id, resource.name);
-    if (!prepared) continue;
+    const loaded = loadEntryContent(entry);
+    if (!loaded) continue;
 
     const stored = storedFingerprints.get(entry.relativePath);
-    if (!forcedFullSync && stored === prepared.fingerprint) {
+    if (!forcedFullSync && stored === loaded.fingerprint) {
       continue;
     }
+
+    const prepared = await prepareChunksFromText(
+      entry,
+      resource.id,
+      resource.name,
+      loaded.text,
+      loaded.fingerprint,
+    );
 
     filesChanged++;
     if (!forcedFullSync && stored !== undefined) {
@@ -175,11 +186,102 @@ export async function embedAndStoreChunks(
   return chunks.length;
 }
 
-function prepareChunksForEntry(
+export async function prepareChunksForEntry(
   entry: FileEntry,
   resourceId: string,
   resourceName: string,
-): { fingerprint: string; chunks: Chunk[] } | null {
+): Promise<{ fingerprint: string; chunks: Chunk[] } | null> {
+  const loaded = loadEntryContent(entry);
+  if (!loaded) return null;
+  return prepareChunksFromText(entry, resourceId, resourceName, loaded.text, loaded.fingerprint);
+}
+
+async function enforceChunkTokenLimit(
+  chunks: Chunk[],
+  safeTokenLimit: number,
+): Promise<Chunk[]> {
+  const finalized: Chunk[] = [];
+
+  for (const chunk of chunks) {
+    const actualTokens = await countTokens(chunk.text);
+    if (actualTokens <= safeTokenLimit) {
+      finalized.push({
+        ...chunk,
+        estimated_tokens: actualTokens,
+      });
+      continue;
+    }
+
+    const splitChunks = splitOversizedChunk(chunk, actualTokens, safeTokenLimit);
+    if (splitChunks.length === 1 && splitChunks[0]?.text === chunk.text) {
+      finalized.push({
+        ...chunk,
+        estimated_tokens: actualTokens,
+      });
+      continue;
+    }
+
+    finalized.push(...await enforceChunkTokenLimit(splitChunks, safeTokenLimit));
+  }
+
+  return finalized.map((chunk, index) => ({
+    ...chunk,
+    chunk_index: index,
+  }));
+}
+
+function splitOversizedChunk(
+  chunk: Chunk,
+  actualTokens: number,
+  safeTokenLimit: number,
+): Chunk[] {
+  const proportionalMaxChars = Math.floor(
+    (chunk.text.length * safeTokenLimit / Math.max(actualTokens, 1)) * 0.9,
+  );
+  const nextMaxChars = Math.max(
+    MIN_SPLIT_CHARS,
+    Math.min(chunk.text.length - 1, proportionalMaxChars),
+  );
+
+  if (nextMaxChars >= chunk.text.length) {
+    return [chunk];
+  }
+
+  const nextTargetChars = Math.max(
+    Math.floor(nextMaxChars * 0.7),
+    Math.min(MIN_SPLIT_CHARS, nextMaxChars - 1),
+  );
+  const nextOverlapChars = Math.max(
+    Math.min(Math.floor(nextTargetChars * 0.1), Math.floor(nextMaxChars * 0.2)),
+    16,
+  );
+
+  return chunkText(
+    chunk.text,
+    {
+      absolutePath: chunk.file_path,
+      relativePath: chunk.file_path,
+      sizeBytes: Buffer.byteLength(chunk.text),
+    },
+    chunk.resource_id,
+    chunk.resource_name,
+    chunk.fingerprint,
+    {
+      targetChunkChars: nextTargetChars,
+      maxChunkChars: nextMaxChars,
+      overlapChars: nextOverlapChars,
+      lineOffset: chunk.start_line - 1,
+    },
+  );
+}
+
+function getSafeTokenLimit(): number {
+  return Math.max(1, getEmbedContextSize() - TOKEN_SPLIT_HEADROOM);
+}
+
+function loadEntryContent(
+  entry: FileEntry,
+): { text: string; fingerprint: string } | null {
   let content: Buffer;
   try {
     content = fs.readFileSync(entry.absolutePath);
@@ -187,11 +289,24 @@ function prepareChunksForEntry(
     return null;
   }
 
-  const text = content.toString("utf-8");
-  const fingerprint = crypto.createHash("sha256").update(content).digest("hex");
+  return {
+    text: content.toString("utf-8"),
+    fingerprint: crypto.createHash("sha256").update(content).digest("hex"),
+  };
+}
 
+async function prepareChunksFromText(
+  entry: FileEntry,
+  resourceId: string,
+  resourceName: string,
+  text: string,
+  fingerprint: string,
+): Promise<{ fingerprint: string; chunks: Chunk[] }> {
   return {
     fingerprint,
-    chunks: chunkText(text, entry, resourceId, resourceName, fingerprint),
+    chunks: await enforceChunkTokenLimit(
+      chunkText(text, entry, resourceId, resourceName, fingerprint),
+      getSafeTokenLimit(),
+    ),
   };
 }

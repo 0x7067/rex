@@ -43,8 +43,8 @@ describe("createResource", () => {
   it("sets index_profile for new resources", () => {
     const r = createResource(validInput);
     expect(r.index_profile).toEqual({
-      embed_model: "nomic-embed-text",
-      chunker_version: "boundary-v1",
+      embed_model: "nomic-ai/nomic-embed-text-v1.5",
+      chunker_version: "boundary-v2",
       index_schema_version: "2",
     });
   });
@@ -72,8 +72,8 @@ describe("ResourceSchema", () => {
       last_sync_at: "2026-01-01T00:00:00Z",
       chunk_count: 42,
       index_profile: {
-        embed_model: "nomic-embed-text",
-        chunker_version: "boundary-v1",
+        embed_model: "nomic-ai/nomic-embed-text-v1.5",
+        chunker_version: "boundary-v2",
         index_schema_version: "2",
       },
     };

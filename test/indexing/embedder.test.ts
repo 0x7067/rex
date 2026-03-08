@@ -1,102 +1,133 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock global fetch before importing embedder
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+vi.mock("node-llama-cpp", () => ({
+  getLlama: vi.fn(),
+  LlamaLogLevel: {
+    error: "error",
+  },
+  resolveModelFile: vi.fn(),
+}));
 
-// Import after mocking
-const { embed, embedOne } = await import("../../src/indexing/embedder.js");
-
-function makeOllamaResponse(embeddings: number[][]): Response {
-  return {
-    ok: true,
-    json: () => Promise.resolve({ embeddings }),
-    text: () => Promise.resolve(""),
-  } as unknown as Response;
+function makeChain(vectors: number[][]) {
+  let callIndex = 0;
+  const getEmbeddingFor = vi.fn().mockImplementation(async () => ({
+    vector: vectors[callIndex++] ?? [],
+  }));
+  const ctx = { getEmbeddingFor };
+  const tokenize = vi.fn().mockImplementation((text: string) =>
+    Array.from({ length: text.split(/\s+/).filter(Boolean).length }, (_, index) => index + 1),
+  );
+  const model = {
+    createEmbeddingContext: vi.fn().mockResolvedValue(ctx),
+    tokenize,
+  };
+  const llama = { loadModel: vi.fn().mockResolvedValue(model) };
+  return { llama, getEmbeddingFor, tokenize };
 }
+
+async function loadEmbedder() {
+  const mod = await import("../../src/indexing/embedder.js");
+  const llc = await import("node-llama-cpp");
+  return { ...mod, mocks: vi.mocked(llc) };
+}
+
+describe("getEmbedModel", () => {
+  it("defaults to nomic-ai/nomic-embed-text-v1.5", async () => {
+    const { getEmbedModel } = await loadEmbedder();
+    expect(getEmbedModel()).toBe("nomic-ai/nomic-embed-text-v1.5");
+  });
+});
 
 describe("embed", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetModules();
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
+  it("returns empty array for empty input without calling getLlama", async () => {
+    const { embed, mocks } = await loadEmbedder();
+    expect(await embed([])).toEqual([]);
+    expect(mocks.getLlama).not.toHaveBeenCalled();
   });
 
-  it("returns empty array for empty input without calling fetch", async () => {
-    const result = await embed([]);
-    expect(result).toEqual([]);
-    expect(mockFetch).not.toHaveBeenCalled();
+  it("calls createEmbeddingContext with contextSize: 2048", async () => {
+    const { embed, mocks } = await loadEmbedder();
+    mocks.resolveModelFile.mockResolvedValue("/fake/model.gguf");
+    const { llama } = makeChain([[0.1, 0.2, 0.3]]);
+    mocks.getLlama.mockResolvedValue(llama);
+
+    await embed(["hello"]);
+    expect(mocks.getLlama).toHaveBeenCalledWith({
+      logLevel: "error",
+    });
+    const model = await llama.loadModel.mock.results[0]?.value;
+    expect(model.createEmbeddingContext).toHaveBeenCalledWith({ contextSize: 4096 });
   });
 
-  it("calls Ollama /api/embed and returns Float32Array[] for single text", async () => {
-    mockFetch.mockResolvedValue(makeOllamaResponse([[0.1, 0.2, 0.3]]));
+  it("calls getEmbeddingFor and returns Float32Array[] for single text", async () => {
+    const { embed, mocks } = await loadEmbedder();
+    mocks.resolveModelFile.mockResolvedValue("/fake/model.gguf");
+    const { llama, getEmbeddingFor } = makeChain([[0.1, 0.2, 0.3]]);
+    mocks.getLlama.mockResolvedValue(llama);
 
     const result = await embed(["hello"]);
-    expect(mockFetch).toHaveBeenCalledOnce();
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/embed"),
-      expect.objectContaining({ method: "POST" }),
-    );
     expect(result).toHaveLength(1);
     expect(result[0]).toBeInstanceOf(Float32Array);
-    expect(Array.from(result[0]!)).toEqual(
-      Array.from(new Float32Array([0.1, 0.2, 0.3])),
-    );
+    expect(Array.from(result[0]!)).toEqual(Array.from(new Float32Array([0.1, 0.2, 0.3])));
+    expect(getEmbeddingFor).toHaveBeenCalledWith("hello");
   });
 
   it("returns multiple Float32Arrays for multiple texts", async () => {
-    mockFetch.mockResolvedValue(
-      makeOllamaResponse([
-        [0.1, 0.2],
-        [0.3, 0.4],
-      ]),
-    );
+    const { embed, mocks } = await loadEmbedder();
+    mocks.resolveModelFile.mockResolvedValue("/fake/model.gguf");
+    const { llama, getEmbeddingFor } = makeChain([[0.1, 0.2], [0.3, 0.4]]);
+    mocks.getLlama.mockResolvedValue(llama);
 
-    const result = await embed(["hello", "world"]);
+    const result = await embed(["a", "b"]);
     expect(result).toHaveLength(2);
     expect(result[0]).toBeInstanceOf(Float32Array);
     expect(result[1]).toBeInstanceOf(Float32Array);
-  });
-
-  it("throws when Ollama returns a non-ok response", async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: () => Promise.resolve("Internal Server Error"),
-    } as unknown as Response);
-
-    await expect(embed(["hello"])).rejects.toThrow(
-      /Ollama embed failed: HTTP 500/,
-    );
-  });
-
-  it("throws a clear not-running error when fetch fails to connect", async () => {
-    mockFetch.mockRejectedValue(new TypeError("fetch failed"));
-
-    await expect(embed(["hello"])).rejects.toThrow(
-      /Ollama is not running/,
-    );
+    expect(getEmbeddingFor).toHaveBeenCalledTimes(2);
   });
 });
 
 describe("embedOne", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
   it("returns a single Float32Array for one text", async () => {
-    mockFetch.mockResolvedValue(makeOllamaResponse([[0.5, 0.6, 0.7]]));
+    const { embedOne, mocks } = await loadEmbedder();
+    mocks.resolveModelFile.mockResolvedValue("/fake/model.gguf");
+    const { llama } = makeChain([[0.5, 0.6, 0.7]]);
+    mocks.getLlama.mockResolvedValue(llama);
 
     const result = await embedOne("hello");
     expect(result).toBeInstanceOf(Float32Array);
-    expect(Array.from(result)).toEqual(
-      Array.from(new Float32Array([0.5, 0.6, 0.7])),
-    );
+    expect(Array.from(result)).toEqual(Array.from(new Float32Array([0.5, 0.6, 0.7])));
   });
 
   it("throws when embedding returns no results", async () => {
-    mockFetch.mockResolvedValue(makeOllamaResponse([]));
+    const { embedOne, mocks } = await loadEmbedder();
+    mocks.resolveModelFile.mockResolvedValue("/fake/model.gguf");
+    const { llama } = makeChain([[]]);
+    mocks.getLlama.mockResolvedValue(llama);
 
-    await expect(embedOne("hello")).rejects.toThrow(
-      "Embedding returned no results",
-    );
+    await expect(embedOne("hello")).rejects.toThrow("Embedding returned no results");
+  });
+});
+
+describe("countTokens", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("uses the loaded model tokenizer for token-aware chunk sizing", async () => {
+    const { countTokens, mocks } = await loadEmbedder();
+    mocks.resolveModelFile.mockResolvedValue("/fake/model.gguf");
+    const { llama, tokenize } = makeChain([[0.5]]);
+    mocks.getLlama.mockResolvedValue(llama);
+
+    await expect(countTokens("alpha beta gamma")).resolves.toBe(3);
+    expect(tokenize).toHaveBeenCalledWith("alpha beta gamma");
   });
 });

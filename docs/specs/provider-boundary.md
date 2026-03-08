@@ -80,7 +80,7 @@ Changing the active provider must not change:
 - `--json` output shapes for any command
 - Answer grounding guarantees (the prompt construction always includes summary blocks and retrieved chunks regardless of provider)
 
-**Embeddings are always local.** The `@huggingface/transformers` + `nomic-embed-text-v1.5` model is used for both indexing and query embedding. Provider selection has no effect on the embedding model.
+**Embeddings are always local.** `rex` uses `node-llama-cpp` with a local GGUF build of `nomic-ai/nomic-embed-text-v1.5` for both indexing and query embedding. Provider selection has no effect on the embedding model.
 
 ---
 

@@ -8,6 +8,14 @@ const OVERLAP_TOKENS = 40;
 // Rough approximation: 1 token ≈ 4 characters for English/code
 const CHARS_PER_TOKEN = 4;
 
+export interface ChunkTextOptions {
+  targetChunkChars?: number;
+  maxChunkChars?: number;
+  overlapChars?: number;
+  lineOffset?: number;
+  chunkIndexStart?: number;
+}
+
 export interface Chunk {
   resource_id: string;
   resource_name: string;
@@ -27,23 +35,25 @@ export function chunkText(
   resourceId: string,
   resourceName: string,
   fingerprint: string,
+  options: ChunkTextOptions = {},
 ): Chunk[] {
   if (text.length === 0) return [];
 
-  const targetChars = TARGET_CHUNK_TOKENS * CHARS_PER_TOKEN;
-  const maxChars = MAX_CHUNK_TOKENS * CHARS_PER_TOKEN;
-  const overlapChars = OVERLAP_TOKENS * CHARS_PER_TOKEN;
+  const targetChars = options.targetChunkChars ?? TARGET_CHUNK_TOKENS * CHARS_PER_TOKEN;
+  const maxChars = options.maxChunkChars ?? MAX_CHUNK_TOKENS * CHARS_PER_TOKEN;
+  const overlapChars = options.overlapChars ?? OVERLAP_TOKENS * CHARS_PER_TOKEN;
+  const lineOffset = options.lineOffset ?? 0;
   const chunks: Chunk[] = [];
   const lineStarts = buildLineStarts(text);
 
   let start = 0;
-  let index = 0;
+  let index = options.chunkIndexStart ?? 0;
 
   while (start < text.length) {
     const { end, strongBoundary } = findChunkEnd(text, start, targetChars, maxChars);
     const chunkTextValue = text.slice(start, end);
-    const startLine = lineNumberAtOffset(lineStarts, start);
-    const endLine = lineNumberAtOffset(lineStarts, Math.max(start, end - 1));
+    const startLine = lineOffset + lineNumberAtOffset(lineStarts, start);
+    const endLine = lineOffset + lineNumberAtOffset(lineStarts, Math.max(start, end - 1));
     chunks.push({
       resource_id: resourceId,
       resource_name: resourceName,
@@ -69,6 +79,7 @@ export function chunkFile(
   resourceId: string,
   resourceName: string,
   fingerprint: string,
+  options: ChunkTextOptions = {},
 ): Chunk[] {
   let text: string;
   try {
@@ -76,7 +87,7 @@ export function chunkFile(
   } catch {
     return [];
   }
-  return chunkText(text, entry, resourceId, resourceName, fingerprint);
+  return chunkText(text, entry, resourceId, resourceName, fingerprint, options);
 }
 
 function findChunkEnd(

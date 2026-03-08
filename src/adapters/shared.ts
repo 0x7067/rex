@@ -16,6 +16,12 @@ export const DEFAULT_EXCLUDES = [
   "**/package-lock.json",
   "**/yarn.lock",
   "**/pnpm-lock.yaml",
+  "**/*.min.js",
+  "**/*.min.css",
+  "**/*.min.mjs",
+  "**/*.map",
+  "**/*.bundle.js",
+  "**/*.bundle.mjs",
 ];
 
 const BINARY_EXTENSIONS = new Set([

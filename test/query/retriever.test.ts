@@ -126,6 +126,35 @@ describe("retrieve", () => {
     ]);
   });
 
+  it("keeps split chunks from the same file in chunk order when scores tie", async () => {
+    mockSearchChunks.mockResolvedValue([
+      {
+        ...makeRow("r1", 0.1, 2),
+        file_path: "src/dense.ts",
+        start_line: 11,
+        end_line: 20,
+      },
+      {
+        ...makeRow("r1", 0.1, 1),
+        file_path: "src/dense.ts",
+        start_line: 1,
+        end_line: 10,
+      },
+    ]);
+
+    const result = await retrieve("q", ["r1"], {
+      perResourceCap: 10,
+      totalCap: 10,
+      collapseByFile: false,
+    });
+
+    expect(result.map((chunk) => chunk.chunk_index)).toEqual([1, 2]);
+    expect(result.map((chunk) => [chunk.start_line, chunk.end_line])).toEqual([
+      [1, 10],
+      [11, 20],
+    ]);
+  });
+
   it("biases fast codex retrieval away from tooling artifacts and toward source files", async () => {
     mockSearchChunks.mockResolvedValue([
       {

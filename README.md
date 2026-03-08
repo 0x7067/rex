@@ -12,7 +12,7 @@ The first teammate rollout is:
 - install channel: npm with the `alpha` dist-tag
 - platform: macOS first
 - default answer provider: Claude Code
-- default embedding backend: local Ollama with `nomic-embed-text`
+- default embedding backend: local `node-llama-cpp` with `nomic-ai/nomic-embed-text-v1.5-GGUF`
 
 The supported public CLI surface for this rollout is:
 
@@ -30,16 +30,11 @@ The supported public CLI surface for this rollout is:
 - macOS
 - Node.js 20+
 - npm
-- Ollama installed
-- Ollama embedding model pulled locally:
-
-```bash
-ollama pull nomic-embed-text
-```
 
 For the default path, teammates also need Claude Code installed and authenticated.
 
 For alternative answer-provider paths, teammates can use Codex CLI instead of Claude Code, or Ollama itself for a fully local setup.
+The embedding model downloads automatically to the local `node-llama-cpp` cache on first use.
 
 ### Optional Preflight
 
@@ -53,12 +48,10 @@ If you are installing from npm instead, use this checklist:
 
 - `node --version` reports Node.js 20 or newer
 - `npm --version` succeeds
-- `ollama --version` succeeds
-- the Ollama app or local service is running
-- `ollama list` includes `nomic-embed-text`
 - `REX_HOME` is either unset or points to a writable directory
 - for the default path, `claude --version` succeeds
 - for the Codex path, `codex --version` succeeds
+- for the Ollama answer-provider path, `ollama --version` succeeds
 
 ### Install The CLI
 
@@ -106,12 +99,6 @@ rex add ./some-project
 rex ask "How does the sync pipeline work?"
 ```
 
-The fully local Ollama path still requires the embedding model:
-
-```bash
-ollama pull nomic-embed-text
-```
-
 Useful follow-up commands:
 
 ```bash
@@ -127,10 +114,11 @@ rex remove some-project
 You can override runtime locations and embedding settings with:
 
 - `REX_HOME`
-- `REX_OLLAMA_ENDPOINT`
 - `REX_EMBED_MODEL`
+- `REX_GGUF_SOURCE`
+- `REX_OLLAMA_ENDPOINT` for the Ollama answer-provider path
 
-For the team alpha path, `rex` uses Claude with the default `haiku` model for answer generation, while Ollama still powers local embeddings during indexing. Codex is available as an alternative CLI-backed provider, and Ollama can also be used as the answer provider for a fully local setup.
+For the team alpha path, `rex` uses Claude with the default `haiku` model for answer generation, while local GGUF inference via `node-llama-cpp` powers embeddings during indexing and retrieval. Codex is available as an alternative CLI-backed provider, and Ollama can also be used as the answer provider for a fully local setup.
 
 ## Contributor Setup
 
