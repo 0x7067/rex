@@ -2,6 +2,7 @@ node_modules/
 dist/
 .claude/
 .crush/
+.worktrees/
 coverage/
 *.log
 *.tgz
