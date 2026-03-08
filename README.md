@@ -70,6 +70,8 @@ Configure the default answer provider:
 rex connect claude
 ```
 
+`rex connect claude` now defaults to the `haiku` model. Pass `--model <name>` to override it.
+
 Add and index a local resource:
 
 ```bash
@@ -100,7 +102,7 @@ You can override runtime locations and embedding settings with:
 - `REX_OLLAMA_ENDPOINT`
 - `REX_EMBED_MODEL`
 
-For the team alpha path, `rex connect claude` configures answer generation, while Ollama still powers local embeddings during indexing.
+For the team alpha path, `rex connect claude` configures Claude with the default `haiku` model for answer generation, while Ollama still powers local embeddings during indexing.
 
 ## Contributor Setup
 

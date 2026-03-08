@@ -31,7 +31,7 @@ Configure or select the active LLM provider.
 
 | Flag | Description |
 |------|-------------|
-| `--model <model>` | Model name or endpoint override (provider-specific) |
+| `--model <model>` | Model name or override (provider-specific). Defaults to `haiku` for `claude`. |
 | `--endpoint <url>` | Custom API endpoint (for `ollama`) |
 
 ### Behavior
@@ -43,16 +43,16 @@ Configure or select the active LLM provider.
 ### Human Output
 
 ```
-Provider set: ollama (model: nomic-embed-text, endpoint: http://localhost:11434)
+Provider set: claude, model: haiku
 ```
 
 ### `--json` Output
 
 ```json
 {
-  "provider": "ollama",
-  "model": "llama3",
-  "endpoint": "http://localhost:11434"
+  "name": "claude",
+  "model": "haiku",
+  "endpoint": null
 }
 ```
 

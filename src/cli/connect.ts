@@ -9,9 +9,10 @@ export function registerConnect(program: Command): void {
     .option("--model <model>", "Model name or override")
     .option("--endpoint <url>", "Custom API endpoint (ollama only)")
     .action((provider: string, options: { model?: string; endpoint?: string }) => {
+      const defaultModel = provider === "claude" ? "haiku" : null;
       const parsed = ProviderConfigSchema.safeParse({
         name: provider,
-        model: options.model ?? null,
+        model: options.model ?? defaultModel,
         endpoint: options.endpoint ?? null,
       });
 
