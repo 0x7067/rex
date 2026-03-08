@@ -1,6 +1,6 @@
 {
-  "name": "rex",
-  "version": "0.1.0",
+  "name": "@denguinho/rex",
+  "version": "0.1.0-alpha.1",
   "packageManager": "bun@1.3.6",
   "description": "rex: resource-first persistent knowledge CLI",
   "type": "module",
@@ -11,17 +11,34 @@
     "build": "tsc",
     "dev": "tsx bin/rex.ts",
     "bench:indexing": "tsx scripts/bench-indexing.ts",
+    "preflight:macos": "bash scripts/preflight-macos.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepack": "tsc"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Denguinho/rex.git"
+  },
+  "homepage": "https://github.com/Denguinho/rex",
+  "bugs": {
+    "url": "https://github.com/Denguinho/rex/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "alpha"
+  },
   "keywords": [
     "rex",
     "cli",
     "knowledge",
     "retrieval",
-    "llm"
+    "llm",
+    "rag",
+    "claude",
+    "ollama"
   ],
   "files": [
     "dist/bin/**",
