@@ -11,6 +11,7 @@ import { generateSummaries } from "../query/answerer.js";
 import type { ProviderConfig, Resource } from "./resource.js";
 import { updateResource } from "./registry.js";
 import { snapshotsDir } from "./config.js";
+import { getMaterializedDir } from "../query/resolve-target.js";
 
 const ADAPTERS: ResourceAdapter[] = [localAdapter, gitAdapter, packageAdapter];
 
@@ -123,13 +124,3 @@ export async function syncResource(
   };
 }
 
-function getMaterializedDir(resource: Resource): string {
-  switch (resource.snapshot_metadata.type) {
-    case "local":
-      return resource.snapshot_metadata.absolute_path;
-    case "git":
-      return resource.snapshot_metadata.clone_path;
-    case "package":
-      return resource.snapshot_metadata.extract_path;
-  }
-}

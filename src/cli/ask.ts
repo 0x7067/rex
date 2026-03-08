@@ -1,11 +1,12 @@
 import type { Command } from "commander";
 import ora, { type Ora } from "ora";
-import { getProvider, listResources, getResourceByName } from "../core/registry.js";
+import { getProvider, listResources } from "../core/registry.js";
 import { getSummaries } from "../indexing/store.js";
 import { retrieve } from "../query/retriever.js";
 import { generateAnswer } from "../query/answerer.js";
 import type { Resource } from "../core/resource.js";
 import { RetryableProviderError } from "../provider/interface.js";
+import { resolveTargetResources } from "../query/resolve-target.js";
 
 const FAST_CODEX_RETRIEVE_OPTIONS = {
   perResourceCap: 4,
@@ -41,33 +42,27 @@ export function registerAsk(program: Command): void {
         const targetResources: Resource[] = [];
         const skipped: Array<{ name: string; reason: string }> = [];
 
-        if (options.resource.length > 0) {
-          for (const name of options.resource) {
-            let r: Resource;
-            try {
-              r = getResourceByName(name);
-            } catch {
-              console.error(`Resource "${name}" not found.`);
-              process.exit(2);
+        let resolved: Resource[];
+        try {
+          resolved = resolveTargetResources(process.cwd(), listResources(), options.resource);
+        } catch (err) {
+          console.error(err instanceof Error ? err.message : String(err));
+          process.exit(2);
+        }
+
+        for (const r of resolved) {
+          if (r.last_sync_status === "pending") {
+            if (options.resource.length > 0) {
+              console.warn(`Warning: resource "${r.name}" has never been synced.`);
             }
-            if (r.last_sync_status === "pending") {
-              console.warn(`Warning: resource "${name}" has never been synced.`);
-              skipped.push({ name, reason: "pending" });
-            } else if (r.last_sync_status === "failed") {
-              console.warn(`Warning: resource "${name}" last sync failed.`);
-              skipped.push({ name, reason: "failed" });
-            } else {
-              targetResources.push(r);
+            skipped.push({ name: r.name, reason: "pending" });
+          } else if (r.last_sync_status === "failed") {
+            if (options.resource.length > 0) {
+              console.warn(`Warning: resource "${r.name}" last sync failed.`);
             }
-          }
-        } else {
-          const all = listResources();
-          for (const r of all) {
-            if (r.last_sync_status === "pending" || r.last_sync_status === "failed") {
-              skipped.push({ name: r.name, reason: r.last_sync_status });
-            } else {
-              targetResources.push(r);
-            }
+            skipped.push({ name: r.name, reason: "failed" });
+          } else {
+            targetResources.push(r);
           }
         }
 

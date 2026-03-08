@@ -4,7 +4,7 @@ import path from "node:path";
 import { minimatch } from "minimatch";
 import type { FileEntry } from "./adapter.js";
 
-const DEFAULT_EXCLUDES = [
+export const DEFAULT_EXCLUDES = [
   "**/.git/**",
   "**/node_modules/**",
   "**/dist/**",
@@ -32,7 +32,7 @@ function isBinary(filePath: string): boolean {
   return BINARY_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
-function matchesAny(relativePath: string, patterns: string[]): boolean {
+export function matchesAny(relativePath: string, patterns: string[]): boolean {
   return patterns.some((pattern) =>
     minimatch(relativePath, pattern, { dot: true }),
   );

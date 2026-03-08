@@ -6,6 +6,8 @@ import { registerRemove } from "../src/cli/remove.js";
 import { registerResources } from "../src/cli/resources.js";
 import { registerSync } from "../src/cli/sync.js";
 import { registerAsk } from "../src/cli/ask.js";
+import { registerSearch } from "../src/cli/search.js";
+import { registerWatch } from "../src/cli/watch.js";
 
 const program = new Command();
 
@@ -22,5 +24,7 @@ registerRemove(program);
 registerResources(program);
 registerSync(program);
 registerAsk(program);
+registerSearch(program);
+registerWatch(program);
 
 program.parse(process.argv);
