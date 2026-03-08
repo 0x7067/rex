@@ -61,7 +61,7 @@ Everything else is optional or future-facing.
   - List saved resources, type, health, and last sync status.
 - `tool sync [name...]`
   - Refresh one or more resources.
-- `tool ask -q <question> [-r <name...>]`
+- `tool ask <question> [-r <name...>]`
   - Ask a grounded one-shot question against chosen resources.
 
 ### Required v1 Behavior

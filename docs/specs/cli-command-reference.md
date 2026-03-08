@@ -297,15 +297,20 @@ Done.
 
 ---
 
-## `rex ask -q <question> [-r <name...>]`
+## `rex ask <question> [-r <name...>]`
 
 Ask a one-shot grounded question against selected resources.
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `question` | Yes | The question to answer |
 
 ### Flags
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `-q <question>` | Yes | The question to answer |
 | `-r <name>` | No | Resource name to query (repeatable). Defaults to all resources. |
 
 ### Behavior

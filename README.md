@@ -2,95 +2,117 @@
 
 `rex` is a resource-first persistent knowledge CLI.
 
-It lets you connect a provider, add local or remote resources, index them into a local knowledge base, and ask grounded questions against that saved context later.
+It lets you save local or remote resources into a persistent local knowledge base, refresh that knowledge incrementally, and ask grounded questions against it later.
 
-## Current Status
+## Team Alpha
 
-This repository contains the TypeScript CLI implementation, supporting docs, and tests. It is organized for local development first and is now prepared to live cleanly as a standalone git repository.
+The first teammate rollout is:
 
-## Requirements
+- package: `@denguinho/rex`
+- install channel: npm with the `alpha` dist-tag
+- platform: macOS first
+- default answer provider: Claude Code
+- default embedding backend: local Ollama with `nomic-embed-text`
 
+The supported public CLI surface for this rollout is:
+
+- `rex connect <provider>`
+- `rex add <source>`
+- `rex remove <name>`
+- `rex resources`
+- `rex sync [name...]`
+- `rex ask <question>`
+
+## Install For Teammates
+
+### Prerequisites
+
+- macOS
 - Node.js 20+
-- Bun 1.3.6+
-- Access to at least one supported provider: `ollama`, `claude`, or `codex`
-
-## Local Development
-
-Install dependencies:
+- npm
+- Claude Code installed and authenticated
+- Ollama installed
+- Ollama embedding model pulled locally:
 
 ```bash
-bun install
+ollama pull nomic-embed-text
 ```
 
-Run the CLI in development:
+### Optional Preflight
+
+If you cloned this repository locally, you can run the onboarding check script:
 
 ```bash
-bun run dev -- --help
+bun run preflight:macos
 ```
 
-Build the distributable CLI:
+If you are installing from npm instead, use this checklist:
+
+- `node --version` reports Node.js 20 or newer
+- `npm --version` succeeds
+- `claude --version` succeeds
+- `ollama --version` succeeds
+- the Ollama app or local service is running
+- `ollama list` includes `nomic-embed-text`
+- `REX_HOME` is either unset or points to a writable directory
+
+### Install The CLI
 
 ```bash
-bun run build
+npm install -g @denguinho/rex@alpha
 ```
 
-Run the test suite:
+### First Run
+
+Configure the default answer provider:
 
 ```bash
-bun run test
-```
-
-## Quick Start
-
-Configure a provider:
-
-```bash
-bun run dev -- connect ollama --model llama3
+rex connect claude
 ```
 
 Add and index a local resource:
 
 ```bash
-bun run dev -- add ./some-project
-```
-
-List saved resources:
-
-```bash
-bun run dev -- resources
-```
-
-Refresh indexed data:
-
-```bash
-bun run dev -- sync
+rex add ./some-project
 ```
 
 Ask a grounded question:
 
 ```bash
-bun run dev -- ask -q "How does the sync pipeline work?"
+rex ask "How does the sync pipeline work?"
 ```
 
-Remove a resource:
+Useful follow-up commands:
 
 ```bash
-bun run dev -- remove some-project
+rex resources
+rex sync
+rex remove some-project
 ```
 
-## Commands
+## Runtime Notes
 
-- `rex connect <provider>` configures the active provider profile.
-- `rex add <source>` registers and indexes a resource.
-- `rex resources` lists saved resources and sync status.
-- `rex sync [name...]` refreshes one or more resources.
-- `rex ask -q <question> [-r <name...>]` runs grounded retrieval and answer generation.
-- `rex remove <name>` deletes a resource and its indexed data.
+`rex` stores its registry, snapshots, and LanceDB data under `~/.rex` by default.
 
-## Local State
+You can override runtime locations and embedding settings with:
 
-By default, `rex` stores its registry, snapshots, and LanceDB data under `~/.rex`. Set `REX_HOME` to point those files somewhere else for testing or isolated runs.
+- `REX_HOME`
+- `REX_OLLAMA_ENDPOINT`
+- `REX_EMBED_MODEL`
 
-## Packaging Notes
+For the team alpha path, `rex connect claude` configures answer generation, while Ollama still powers local embeddings during indexing.
 
-The published package is intentionally constrained to the built CLI artifacts plus standard package docs. Repository hosting metadata will be added once the canonical remote exists.
+## Contributor Setup
+
+Repository contributors still use Bun for local development:
+
+```bash
+bun install
+bun run dev -- --help
+bun run build
+bun run test
+```
+
+## Release Notes
+
+Maintainers can publish the alpha package through the GitHub Actions release workflow described in [docs/releasing.md](docs/releasing.md).
