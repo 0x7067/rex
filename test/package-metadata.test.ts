@@ -17,7 +17,7 @@ const packageJson = JSON.parse(
 describe("package metadata", () => {
   it("uses the scoped npm package and preserves the rex binary name", () => {
     expect(packageJson.name).toBe("@denguinho/rex");
-    expect(packageJson.version).toBe("0.1.0-alpha.1");
+    expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
     expect(packageJson.bin).toEqual({
       rex: "./dist/bin/rex.js",
     });

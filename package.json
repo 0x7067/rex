@@ -1,6 +1,6 @@
 {
   "name": "@denguinho/rex",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "packageManager": "bun@1.3.6",
   "description": "rex: resource-first persistent knowledge CLI",
   "type": "module",

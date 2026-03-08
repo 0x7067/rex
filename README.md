@@ -134,3 +134,4 @@ bun run test
 ## Release Notes
 
 Maintainers can publish the alpha package through the GitHub Actions release workflow described in [docs/releasing.md](docs/releasing.md).
+Draft release notes for upcoming tags live under `docs/releases/`.

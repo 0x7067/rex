@@ -23,15 +23,15 @@ NPM_CONFIG_CACHE=/tmp/rex-npm-cache npm pack --dry-run
 - Tag push:
 
 ```bash
-git tag v0.1.0-alpha.1
-git push origin v0.1.0-alpha.1
+git tag v0.1.0-alpha.2
+git push origin v0.1.0-alpha.2
 ```
 
   This triggers `.github/workflows/release.yml`, runs verification, and publishes to npm with the `alpha` dist-tag.
 
 - Manual publish:
   - Open the `release` workflow in GitHub Actions.
-  - Run it with `release_tag=v0.1.0-alpha.1`.
+  - Run it with `release_tag=v0.1.0-alpha.2`.
 
 ## Teammate Install Command
 
@@ -40,3 +40,9 @@ npm install -g @denguinho/rex@alpha
 ```
 
 Rex uses `node-llama-cpp` for local embeddings (Metal GPU on Apple Silicon via llama.cpp). The GGUF model (`nomic-ai/nomic-embed-text-v1.5-GGUF` Q8_0, ~140 MB) downloads automatically to node-llama-cpp's cache on first `embed()` call. No manual setup required.
+
+## Release Notes
+
+Draft release notes for the next alpha tag live in:
+
+- [`docs/releases/v0.1.0-alpha.2.md`](/Users/pedro/Development/denguinho/rex/docs/releases/v0.1.0-alpha.2.md)
