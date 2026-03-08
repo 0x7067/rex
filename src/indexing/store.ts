@@ -140,6 +140,7 @@ export async function searchChunks(
 
   const results = await table
     .vectorSearch(Array.from(queryVector))
+    .distanceType("cosine")
     .limit(topK)
     .where(filter)
     .toArray();

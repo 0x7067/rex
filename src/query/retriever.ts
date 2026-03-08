@@ -108,15 +108,15 @@ function adjustedScore(
 }
 
 function pathBiasWeight(filePath: string): number {
-  if (filePath.startsWith("src/")) return -0.08;
+  if (filePath.startsWith("src/")) return -0.05;
   if (filePath.startsWith("test/")) return 0.02;
-  if (filePath.startsWith("docs/specs/")) return 0.04;
+  if (filePath.startsWith("docs/specs/")) return 0.03;
   if (
     filePath.startsWith(".crush/")
     || filePath.startsWith(".claude/")
     || filePath.startsWith("docs/plans/")
   ) {
-    return 0.35;
+    return 0.20;
   }
   return 0;
 }
