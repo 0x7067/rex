@@ -1,0 +1,50 @@
+{
+  "name": "rex",
+  "version": "0.1.0",
+  "packageManager": "bun@1.3.6",
+  "description": "rex: resource-first persistent knowledge CLI",
+  "type": "module",
+  "bin": {
+    "rex": "./dist/bin/rex.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx bin/rex.ts",
+    "bench:indexing": "tsx scripts/bench-indexing.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepack": "tsc"
+  },
+  "license": "MIT",
+  "keywords": [
+    "rex",
+    "cli",
+    "knowledge",
+    "retrieval",
+    "llm"
+  ],
+  "files": [
+    "dist/bin/**",
+    "dist/src/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@lancedb/lancedb": "^0.9.0",
+    "commander": "^12.0.0",
+    "execa": "^9.0.0",
+    "minimatch": "^10.2.4",
+    "ora": "^9.3.0",
+    "simple-git": "^3.27.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
