@@ -30,13 +30,16 @@ The supported public CLI surface for this rollout is:
 - macOS
 - Node.js 20+
 - npm
-- Claude Code installed and authenticated
 - Ollama installed
 - Ollama embedding model pulled locally:
 
 ```bash
 ollama pull nomic-embed-text
 ```
+
+For the default path, teammates also need Claude Code installed and authenticated.
+
+For alternative answer-provider paths, teammates can use Codex CLI instead of Claude Code, or Ollama itself for a fully local setup.
 
 ### Optional Preflight
 
@@ -50,11 +53,12 @@ If you are installing from npm instead, use this checklist:
 
 - `node --version` reports Node.js 20 or newer
 - `npm --version` succeeds
-- `claude --version` succeeds
 - `ollama --version` succeeds
 - the Ollama app or local service is running
 - `ollama list` includes `nomic-embed-text`
 - `REX_HOME` is either unset or points to a writable directory
+- for the default path, `claude --version` succeeds
+- for the Codex path, `codex --version` succeeds
 
 ### Install The CLI
 
@@ -64,13 +68,13 @@ npm install -g @denguinho/rex@alpha
 
 ### First Run
 
-Configure the default answer provider:
+`rex` uses Claude with the `haiku` model by default, so teammates do not need to run a separate connect step for the standard onboarding path.
+
+If you want to override that default later, you can still run:
 
 ```bash
-rex connect claude
+rex connect claude --model <name>
 ```
-
-`rex connect claude` now defaults to the `haiku` model. Pass `--model <name>` to override it.
 
 Add and index a local resource:
 
@@ -82,6 +86,30 @@ Ask a grounded question:
 
 ```bash
 rex ask "How does the sync pipeline work?"
+```
+
+### Alternative Provider Setups
+
+Use Codex instead of Claude:
+
+```bash
+rex connect codex
+rex add ./some-project
+rex ask "How does the sync pipeline work?"
+```
+
+Use Ollama for a fully local answer path:
+
+```bash
+rex connect ollama --model llama3
+rex add ./some-project
+rex ask "How does the sync pipeline work?"
+```
+
+The fully local Ollama path still requires the embedding model:
+
+```bash
+ollama pull nomic-embed-text
 ```
 
 Useful follow-up commands:
@@ -102,7 +130,7 @@ You can override runtime locations and embedding settings with:
 - `REX_OLLAMA_ENDPOINT`
 - `REX_EMBED_MODEL`
 
-For the team alpha path, `rex connect claude` configures Claude with the default `haiku` model for answer generation, while Ollama still powers local embeddings during indexing.
+For the team alpha path, `rex` uses Claude with the default `haiku` model for answer generation, while Ollama still powers local embeddings during indexing. Codex is available as an alternative CLI-backed provider, and Ollama can also be used as the answer provider for a fully local setup.
 
 ## Contributor Setup
 
