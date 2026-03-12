@@ -7,9 +7,6 @@ import { registerSync } from "./sync.js";
 import { registerAsk } from "./ask.js";
 import { getCliVersion } from "../version.js";
 
-const REPO_URL = "https://github.com/Denguinho/rex";
-const ISSUES_URL = "https://github.com/Denguinho/rex/issues";
-
 export function createProgram(): Command {
   const program = new Command();
 
@@ -60,9 +57,6 @@ function renderTopLevelHelpIntro(): string {
     "  rex connect claude",
     "  rex add ./some-project",
     '  rex ask "How does the sync pipeline work?"',
-    "",
-    `Docs: ${REPO_URL}`,
-    `Issues: ${ISSUES_URL}`,
   ]);
 }
 
