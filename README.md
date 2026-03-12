@@ -61,12 +61,8 @@ npm install -g @denguinho/rex@alpha
 
 ### First Run
 
-`rex` uses Claude with the `haiku` model by default, so teammates do not need to run a separate connect step for the standard onboarding path.
-
-If you want to override that default later, you can still run:
-
 ```bash
-rex connect claude --model <name>
+rex connect claude
 ```
 
 Add and index a local resource:
@@ -79,6 +75,12 @@ Ask a grounded question:
 
 ```bash
 rex ask "How does the sync pipeline work?"
+```
+
+If you want a different Claude model, you can override it explicitly:
+
+```bash
+rex connect claude --model <name>
 ```
 
 ### Alternative Provider Setups

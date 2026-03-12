@@ -7,6 +7,7 @@ import { generateAnswer } from "../query/answerer.js";
 import type { Resource } from "../core/resource.js";
 import { RetryableProviderError } from "../provider/interface.js";
 import { resolveTargetResources } from "../query/resolve-target.js";
+import { addExamples } from "./help.js";
 
 const FAST_CODEX_RETRIEVE_OPTIONS = {
   perResourceCap: 4,
@@ -21,20 +22,25 @@ const CLEAN_CODEX_RETRIEVE_OPTIONS = {
 };
 
 export function registerAsk(program: Command): void {
-  program
+  addExamples(
+    program
     .command("ask")
-    .description("Ask a one-shot question against indexed resources")
+    .description("Ask a grounded question against indexed resources")
     .argument("<question>", "The question to answer")
-    .option("-r, --resource <name>", "Resource name to query (repeatable)", collect, [])
+    .option("-r, --resource <name>", "Resource name to query (repeatable)", collect, []),
+    [
+      'rex ask "How does the sync pipeline work?"',
+      'rex ask "How does the sync pipeline work?" -r some-project',
+    ],
+  )
     .action(
       async (question: string, options: { resource: string[] }) => {
         const json = (program.opts() as { json?: boolean }).json;
 
         const providerConfig = getProvider();
         if (!providerConfig) {
-          console.error(
-            "No provider configured. Run `rex connect` first.",
-          );
+          console.error("No provider configured.");
+          console.error("Next: rex connect claude");
           process.exit(1);
         }
 
@@ -67,11 +73,12 @@ export function registerAsk(program: Command): void {
         }
 
         if (targetResources.length === 0) {
-          const msg = "No indexed resources available. Run `rex sync` first.";
+          const msg = "No indexed resources available.";
           if (json) {
-            console.log(JSON.stringify({ error: msg, resources_skipped: skipped }));
+            console.log(JSON.stringify({ error: `${msg} Run \`rex sync\` first.`, resources_skipped: skipped }));
           } else {
             console.error(msg);
+            console.error("Next: rex sync");
           }
           process.exit(4);
         }
@@ -109,6 +116,12 @@ export function registerAsk(program: Command): void {
               for (const s of answer.sources) {
                 const lines = s.lines ? ` (lines ${s.lines[0]}-${s.lines[1]})` : "";
                 console.log(`  - ${s.resource}: ${s.path}${lines}`);
+              }
+            }
+            if (skipped.length > 0) {
+              console.log("\nSkipped resources:");
+              for (const resource of skipped) {
+                console.log(`  - ${resource.name}: ${resource.reason}`);
               }
             }
           }

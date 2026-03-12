@@ -12,6 +12,7 @@ import { acquireResourceAddLock, releaseResourceAddLock } from "../core/locks.js
 import { addResource, getProvider, updateResource } from "../core/registry.js";
 import { createResource } from "../core/resource.js";
 import { snapshotsDir } from "../core/config.js";
+import { addExamples } from "./help.js";
 
 const ADAPTERS: ResourceAdapter[] = [localAdapter, gitAdapter, packageAdapter];
 
@@ -29,9 +30,10 @@ function inferName(source: string): string {
 }
 
 export function registerAdd(program: Command): void {
-  program
+  addExamples(
+    program
     .command("add <source>")
-    .description("Register and index a resource")
+    .description("Add a resource and index it")
     .option("--name <name>", "Override the inferred resource name")
     .option(
       "--type <type>",
@@ -40,7 +42,9 @@ export function registerAdd(program: Command): void {
     .option("--include <glob>", "Include glob (repeatable)", collect, [])
     .option("--exclude <glob>", "Exclude glob (repeatable)", collect, [])
     .option("--notes <text>", "Notes to attach to the resource")
-    .option("--no-index", "Register without indexing")
+    .option("--no-index", "Register without indexing"),
+    ["rex add ./some-project", "rex add https://github.com/org/repo --name repo"],
+  )
     .action(
       async (
         source: string,
@@ -144,7 +148,10 @@ export function registerAdd(program: Command): void {
         }
 
         if (!options.index) {
-          spinner?.succeed(`Registered resource: ${name} (not indexed)`);
+          spinner?.succeed(`Saved "${name}" (${adapter.type}). Indexing skipped.`);
+          if (!json) {
+            console.log(`Next: rex sync ${name}`);
+          }
           if (json) {
             console.log(JSON.stringify({ name, type: adapter.type, status: "registered" }));
           }
@@ -162,11 +169,12 @@ export function registerAdd(program: Command): void {
         try {
           const providerConfig = getProvider();
           if (!providerConfig) {
-            spinner?.fail("No provider configured. Run `rex connect` first.");
+            spinner?.fail(`No provider configured. Saved "${name}", but skipped indexing.`);
             if (!spinner) {
-              console.error(
-                "No provider configured. Run `rex connect` first. Resource was registered but not indexed.",
-              );
+              console.error(`No provider configured. Saved "${name}", but skipped indexing.`);
+            } else {
+              console.error("Next: rex connect claude");
+              console.error(`Then: rex sync ${name}`);
             }
             process.exitCode = 1;
             return;
@@ -220,8 +228,9 @@ export function registerAdd(program: Command): void {
             );
           } else {
             spinner?.succeed(
-              `Added ${name} (${adapter.type}): ${indexResult.filesScanned} files, ${indexResult.chunksUpdated} chunks${summaryBlocks.length > 0 ? `, summaries: ${summaryBlocks.join(", ")}` : ""}`,
+              `Added "${name}" (${adapter.type}). Indexed ${indexResult.filesScanned} files and ${indexResult.chunksUpdated} chunks${summaryBlocks.length > 0 ? `; summaries: ${summaryBlocks.join(", ")}` : ""}.`,
             );
+            console.log(`Next: rex ask "What does ${name} do?" -r ${name}`);
           }
         } catch (err) {
           spinner?.fail(`Indexing failed: ${err instanceof Error ? err.message : String(err)}`);

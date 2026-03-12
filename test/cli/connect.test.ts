@@ -26,7 +26,8 @@ describe("registerConnect", () => {
       model: "haiku",
       endpoint: null,
     });
-    expect(logSpy).toHaveBeenCalledWith("Provider set: claude, model: haiku");
+    expect(logSpy).toHaveBeenCalledWith('Provider configured: claude (model: haiku)');
+    expect(logSpy).toHaveBeenCalledWith("Next: rex add ./some-project");
 
     logSpy.mockRestore();
   });
@@ -44,8 +45,34 @@ describe("registerConnect", () => {
       model: "sonnet",
       endpoint: null,
     });
-    expect(logSpy).toHaveBeenCalledWith("Provider set: claude, model: sonnet");
+    expect(logSpy).toHaveBeenCalledWith('Provider configured: claude (model: sonnet)');
+    expect(logSpy).toHaveBeenCalledWith("Next: rex add ./some-project");
 
     logSpy.mockRestore();
+  });
+
+  it("guides the user toward a valid provider when the provider name is unknown", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as () => never);
+
+    const program = new Command();
+    program.option("--json");
+    registerConnect(program);
+
+    await expect(
+      program.parseAsync(["connect", "unknown"], { from: "user" }),
+    ).rejects.toThrow("process.exit(1)");
+
+    expect(errSpy).toHaveBeenCalledWith(
+      'Unknown provider "unknown". Choose one of: claude, codex, ollama.',
+    );
+    expect(errSpy).toHaveBeenCalledWith("Example: rex connect claude");
+
+    errSpy.mockRestore();
+    exitSpy.mockRestore();
   });
 });

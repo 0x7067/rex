@@ -35,6 +35,59 @@ describe("registerAsk", () => {
     mockRetrieve.mockResolvedValue([]);
   });
 
+  it("tells the user how to configure a provider before asking", async () => {
+    mockGetProvider.mockReturnValue(null);
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as () => never);
+
+    const program = new Command();
+    program.option("--json");
+    registerAsk(program);
+
+    await expect(
+      program.parseAsync(["ask", "how does sync work?"], { from: "user" }),
+    ).rejects.toThrow("process.exit(1)");
+
+    expect(errSpy).toHaveBeenCalledWith("No provider configured.");
+    expect(errSpy).toHaveBeenCalledWith("Next: rex connect claude");
+
+    errSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("tells the user to sync before asking when no indexed resources are available", async () => {
+    mockGetProvider.mockReturnValue({ name: "ollama", model: null, endpoint: null });
+    mockListResources.mockReturnValue([
+      { id: "r1", name: "ravn", last_sync_status: "pending" },
+    ]);
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as () => never);
+
+    const program = new Command();
+    program.option("--json");
+    registerAsk(program);
+
+    await expect(
+      program.parseAsync(["ask", "where are the offices?"], { from: "user" }),
+    ).rejects.toThrow("process.exit(4)");
+
+    expect(errSpy).toHaveBeenCalledWith("No indexed resources available.");
+    expect(errSpy).toHaveBeenCalledWith("Next: rex sync");
+
+    errSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
   it("uses the fast codex profile first and retries once with the clean profile", async () => {
     mockGetProvider.mockReturnValue({ name: "codex", model: null, endpoint: null });
     mockListResources.mockReturnValue([

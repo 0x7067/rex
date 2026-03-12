@@ -3,18 +3,23 @@ import ora from "ora";
 import { isResourceAddLocked } from "../core/locks.js";
 import { getProvider, listResources, getResourceByName } from "../core/registry.js";
 import { syncResource } from "../core/sync.js";
+import { addExamples } from "./help.js";
 
 export function registerSync(program: Command): void {
-  program
+  addExamples(
+    program
     .command("sync [names...]")
-    .description("Refresh one or more resources (defaults to all)")
-    .option("--full", "Force full re-index")
+    .description("Sync saved resources (defaults to all)")
+    .option("--full", "Force full re-index"),
+    ["rex sync", "rex sync some-project --full"],
+  )
     .action(async (names: string[], options: { full?: boolean }) => {
       const json = (program.opts() as { json?: boolean }).json;
 
       const providerConfig = getProvider();
       if (!providerConfig) {
-        console.error("No provider configured. Run `rex connect` first.");
+        console.error("No provider configured.");
+        console.error("Next: rex connect claude");
         process.exit(1);
       }
 
@@ -31,7 +36,8 @@ export function registerSync(program: Command): void {
       } else {
         resources = listResources();
         if (resources.length === 0) {
-          console.error("No resources registered. Use `rex add <source>` first.");
+          console.error("No resources registered.");
+          console.error("Next: rex add ./some-project");
           process.exit(2);
         }
       }

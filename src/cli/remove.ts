@@ -4,13 +4,17 @@ import type { Command } from "commander";
 import ora from "ora";
 import { getResourceByName, removeResource } from "../core/registry.js";
 import { deleteChunks, deleteSummaries } from "../indexing/store.js";
+import { addExamples } from "./help.js";
 
 export function registerRemove(program: Command): void {
-  program
+  addExamples(
+    program
     .command("remove <name>")
     .description("Remove a resource and delete its indexed data")
     .option("--keep-data", "Keep materialized snapshot on disk")
-    .option("--force", "Skip confirmation prompt")
+    .option("--force", "Skip confirmation prompt"),
+    ["rex remove some-project", "rex remove some-project --force"],
+  )
     .action(
       async (
         name: string,
@@ -28,7 +32,7 @@ export function registerRemove(program: Command): void {
 
         if (!options.force) {
           const confirmed = await confirm(
-            `Remove resource "${name}" and delete ${resource.chunk_count} chunks? [y/N] `,
+            `Remove resource "${name}"? This deletes ${resource.chunk_count} indexed chunks. [y/N] `,
           );
           if (!confirmed) {
             console.log("Aborted.");
@@ -57,7 +61,7 @@ export function registerRemove(program: Command): void {
             }),
           );
         } else {
-          spinner?.succeed(`Removed ${name} (${resource.chunk_count} chunks deleted)`);
+          spinner?.succeed(`Removed "${name}". Deleted ${resource.chunk_count} indexed chunks.`);
         }
       },
     );

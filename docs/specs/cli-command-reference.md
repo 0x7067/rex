@@ -19,13 +19,13 @@ All commands support `--json`. Unknown top-level commands exit with code 1 and p
 
 ## `rex connect <provider>`
 
-Configure or select the active LLM provider.
+Configure the active answer provider.
 
 ### Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `provider` | Yes | Provider name: `ollama`, `claude`, or `codex` |
+| `provider` | Yes | Provider name: `claude`, `codex`, or `ollama` |
 
 ### Flags
 
@@ -43,7 +43,8 @@ Configure or select the active LLM provider.
 ### Human Output
 
 ```
-Provider set: claude, model: haiku
+Provider configured: claude (model: haiku)
+Next: rex add ./some-project
 ```
 
 ### `--json` Output
@@ -68,7 +69,7 @@ Provider set: claude, model: haiku
 
 ## `rex add <source>`
 
-Register a resource and perform initial indexing.
+Add a resource and perform initial indexing.
 
 ### Arguments
 
@@ -103,8 +104,8 @@ If a resource with the same name already exists, `add` fails with exit code 2.
 ### Human Output
 
 ```
-Added resource: my-project (local, 142 files indexed)
-Summary blocks generated: identity, architecture, conventions
+Added "my-project" (local). Indexed 142 files and 891 chunks; summaries: identity, architecture, conventions.
+Next: rex ask "What does my-project do?" -r my-project
 ```
 
 ### `--json` Output
@@ -161,7 +162,7 @@ Remove a resource from the local registry and delete its indexed data.
 ### Human Output
 
 ```
-Removed resource: my-project (891 chunks deleted)
+Removed "my-project". Deleted 891 indexed chunks.
 ```
 
 ### `--json` Output
@@ -185,7 +186,7 @@ Removed resource: my-project (891 chunks deleted)
 
 ## `rex resources`
 
-List all saved resources with type, health, and last sync status.
+List all saved resources with type, health, and sync status.
 
 ### Flags
 
@@ -235,7 +236,7 @@ express         package  npm:express@4.18.2          456     2026-03-07 09:00   
 
 ## `rex sync [name...]`
 
-Refresh one or more resources. If no names are given, syncs all resources.
+Sync one or more resources. If no names are given, syncs all resources.
 
 ### Arguments
 
@@ -323,6 +324,7 @@ Ask a one-shot grounded question against selected resources.
 6. Return the answer with source references.
 
 If a target resource has never been synced, `ask` warns but continues with any available resources.
+If no indexed resources are available, `ask` exits with a next-step hint to run `rex sync`.
 
 ### Human Output
 

@@ -1,11 +1,15 @@
 import type { Command } from "commander";
 import { getResourceByName, listResources } from "../core/registry.js";
+import { addExamples, joinLines } from "./help.js";
 
 export function registerResources(program: Command): void {
-  program
+  addExamples(
+    program
     .command("resources")
-    .description("List all saved resources with type, health, and sync status")
-    .option("--name <name>", "Show details for a single resource")
+    .description("List saved resources and their sync status")
+    .option("--name <name>", "Show details for a single resource"),
+    ["rex resources", "rex resources --name some-project"],
+  )
     .action((options: { name?: string }) => {
       const json = (program.opts() as { json?: boolean }).json;
 
@@ -28,9 +32,12 @@ export function registerResources(program: Command): void {
         }
 
         if (resources.length === 0) {
-          console.log(
-            "No resources added yet. Use `rex add <source>` to add one.",
-          );
+          console.log(joinLines([
+            "No resources added yet.",
+            "Start here:",
+            "  rex connect claude",
+            "  rex add ./some-project",
+          ]));
           return;
         }
 
