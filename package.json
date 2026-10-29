@@ -1,5 +1,5 @@
 {
-  "name": "@denguinho/rex",
+  "name": "@0x7067/rex",
   "version": "0.1.0-alpha.2",
   "packageManager": "bun@1.3.6",
   "description": "rex: resource-first persistent knowledge CLI",
@@ -19,11 +19,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Denguinho/rex.git"
+    "url": "git+https://github.com/0x7067/rex.git"
   },
-  "homepage": "https://github.com/Denguinho/rex",
+  "homepage": "https://github.com/0x7067/rex",
   "bugs": {
-    "url": "https://github.com/Denguinho/rex/issues"
+    "url": "https://github.com/0x7067/rex/issues"
   },
   "publishConfig": {
     "access": "public",

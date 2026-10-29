@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "rex",
+      "name": "@0x7067/rex",
       "dependencies": {
         "@lancedb/lancedb": "^0.9.0",
         "commander": "^12.0.0",

@@ -1,6 +1,6 @@
 # Releasing Rex
 
-`rex` is currently distributed as the scoped alpha package `@denguinho/rex`.
+`rex` is currently distributed as the scoped alpha package `@0x7067/rex`.
 
 ## Before You Publish
 
@@ -36,7 +36,7 @@ git push origin v0.1.0-alpha.2
 ## Teammate Install Command
 
 ```bash
-npm install -g @denguinho/rex@alpha
+npm install -g @0x7067/rex@alpha
 ```
 
 Rex uses `node-llama-cpp` for local embeddings (Metal GPU on Apple Silicon via llama.cpp). The GGUF model (`nomic-ai/nomic-embed-text-v1.5-GGUF` Q8_0, ~140 MB) downloads automatically to node-llama-cpp's cache on first `embed()` call. No manual setup required.
@@ -45,4 +45,4 @@ Rex uses `node-llama-cpp` for local embeddings (Metal GPU on Apple Silicon via l
 
 Draft release notes for the next alpha tag live in:
 
-- [`docs/releases/v0.1.0-alpha.2.md`](/Users/pedro/Development/denguinho/rex/docs/releases/v0.1.0-alpha.2.md)
+- [`docs/releases/v0.1.0-alpha.2.md`](releases/v0.1.0-alpha.2.md)

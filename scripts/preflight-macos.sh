@@ -71,7 +71,7 @@ echo
 if [[ "$FAILURES" -eq 0 ]]; then
   echo "Preflight passed."
   echo "Next steps:"
-  echo "  npm install -g @denguinho/rex@alpha"
+  echo "  npm install -g @0x7067/rex@alpha"
   echo "  rex add ./some-project"
   echo '  rex ask "How does the sync pipeline work?"'
 else

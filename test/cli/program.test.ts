@@ -35,7 +35,7 @@ describe("createProgram", () => {
     writeSpy.mockRestore();
   });
 
-  it("includes examples and support links in top-level help", () => {
+  it("includes examples without project URLs in top-level help", () => {
     const program = createProgram();
     let output = "";
     program.configureOutput({
@@ -50,7 +50,7 @@ describe("createProgram", () => {
     expect(output).toContain("Examples:");
     expect(output).toContain("rex connect claude");
     expect(output).toContain("rex add ./some-project");
-    expect(output).toContain("Docs: https://github.com/Denguinho/rex");
-    expect(output).toContain("Issues: https://github.com/Denguinho/rex/issues");
+    expect(output).not.toContain("Docs:");
+    expect(output).not.toContain("Issues:");
   });
 });

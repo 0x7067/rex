@@ -16,7 +16,7 @@ const packageJson = JSON.parse(
 
 describe("package metadata", () => {
   it("uses the scoped npm package and preserves the rex binary name", () => {
-    expect(packageJson.name).toBe("@denguinho/rex");
+    expect(packageJson.name).toBe("@0x7067/rex");
     expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
     expect(packageJson.bin).toEqual({
       rex: "./dist/bin/rex.js",
@@ -26,11 +26,11 @@ describe("package metadata", () => {
   it("includes the repository metadata needed for publishing and support", () => {
     expect(packageJson.repository).toEqual({
       type: "git",
-      url: "git+https://github.com/Denguinho/rex.git",
+      url: "git+https://github.com/0x7067/rex.git",
     });
-    expect(packageJson.homepage).toBe("https://github.com/Denguinho/rex");
+    expect(packageJson.homepage).toBe("https://github.com/0x7067/rex");
     expect(packageJson.bugs).toEqual({
-      url: "https://github.com/Denguinho/rex/issues",
+      url: "https://github.com/0x7067/rex/issues",
     });
     expect(packageJson.publishConfig).toEqual({
       access: "public",

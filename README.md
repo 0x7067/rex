@@ -8,7 +8,7 @@ It lets you save local or remote resources into a persistent local knowledge bas
 
 The first teammate rollout is:
 
-- package: `@denguinho/rex`
+- package: `@0x7067/rex`
 - install channel: npm with the `alpha` dist-tag
 - platform: macOS first
 - default answer provider: Claude Code
@@ -56,7 +56,7 @@ If you are installing from npm instead, use this checklist:
 ### Install The CLI
 
 ```bash
-npm install -g @denguinho/rex@alpha
+npm install -g @0x7067/rex@alpha
 ```
 
 ### First Run
