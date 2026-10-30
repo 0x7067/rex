@@ -48,7 +48,7 @@ interface Provider {
 
 - Transport: HTTP POST to `http://localhost:11434/api/generate` (or custom endpoint)
 - Prompt delivery: JSON body `{ model, prompt }`
-- Response parsing: streamed JSON response, collect and concatenate `response` fields
+- Response parsing: non-streaming JSON response, return its `response` field
 - Configuration: `model` (required), `endpoint` (optional, defaults to `http://localhost:11434`)
 
 ### `claude`
@@ -107,3 +107,11 @@ Provider config is stored in `registry.json` under the `provider` key. It is set
 - If the provider returns a non-zero exit code, the error is surfaced in `ask` output.
 - If the Ollama HTTP call fails (connection refused, timeout), `ask` exits with code 3 and the HTTP error.
 - Provider errors never corrupt registry state.
+
+## Generation isolation in the current implementation
+
+Claude uses `--tools ""`, denies MCP tools, supplies an empty strict MCP configuration, disables hooks and enters safe mode. It retains normal subscription authentication. Bare mode is deliberately avoided because current Claude Code does not read OAuth/keychain credentials in that mode. Use a CLI supporting the selected flags; the local verification used Claude Code 2.1.310.
+
+Codex uses a fresh disposable directory, ephemeral/read-only execution, ignores user configuration/rules and disables shell, web, image, app/plugin, hook, memory and agent surfaces supported by CLI 0.164. User authentication remains available, but custom provider configuration in the ignored user config is not loaded. These flags reduce capabilities; managed configuration and the absence of a universal tool-disable flag mean the CLI is not claimed to be a fully context-only sandbox. Provider contract tests validate arguments without making paid generation calls.
+
+Ollama uses `/api/generate` with a 120-second timeout, an 8,192-token context setting and an output limit of 1,024 tokens. Its model is responsible for following the supplied grounding instructions. None of these providers independently stores or retrieves Rex chunks.

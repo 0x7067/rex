@@ -1,0 +1,46 @@
+{
+  "corpus_paths": [
+    "src/indexing/embedder.ts",
+    "src/indexing/store.ts",
+    "src/adapters/shared.ts",
+    "src/adapters/git.ts",
+    "src/cli/ask.ts",
+    "src/query/answerer.ts",
+    "src/indexing/profile.ts",
+    "src/core/sync.ts"
+  ],
+  "questions": [
+    {
+      "question": "Where are Nomic search_document and search_query prefixes applied?",
+      "relevant_paths": ["src/indexing/embedder.ts"]
+    },
+    {
+      "question": "whenNotMatchedBySourceDelete resource_id",
+      "relevant_paths": ["src/indexing/store.ts"]
+    },
+    {
+      "question": "How are nested .gitignore rules honored when walking files?",
+      "relevant_paths": ["src/adapters/shared.ts"]
+    },
+    {
+      "question": "What stops two remote repositories with the same name from sharing a clone directory?",
+      "relevant_paths": ["src/adapters/git.ts"]
+    },
+    {
+      "question": "When does asking a question skip a resource with an incompatible embedding index?",
+      "relevant_paths": ["src/cli/ask.ts"]
+    },
+    {
+      "question": "What happens if an answer has no valid source citations?",
+      "relevant_paths": ["src/query/answerer.ts"]
+    },
+    {
+      "question": "How is the actual GGUF source included in embedding cache identity?",
+      "relevant_paths": ["src/indexing/profile.ts"]
+    },
+    {
+      "question": "How does sync record a summary generation failure and keep the previous successful timestamp?",
+      "relevant_paths": ["src/core/sync.ts"]
+    }
+  ]
+}

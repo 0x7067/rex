@@ -1,183 +1,82 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChunkRow } from "../../src/indexing/store.js";
-
-const mockEmbedOne = vi.fn();
-const mockSearchChunks = vi.fn();
-
-vi.mock("../../src/indexing/embedder.js", () => ({
-  embedOne: mockEmbedOne,
-}));
-
+const mocks = vi.hoisted(() => ({ embed: vi.fn(), search: vi.fn() }));
+vi.mock("../../src/indexing/embedder.js", () => ({ embedOne: mocks.embed }));
 vi.mock("../../src/indexing/store.js", () => ({
-  searchChunks: mockSearchChunks,
+  searchHybridChunks: mocks.search,
 }));
-
 const { retrieve } = await import("../../src/query/retriever.js");
-
-const DUMMY_VECTOR = new Float32Array(768).fill(0);
-
-function makeRow(resourceId: string, distance: number, index: number): ChunkRow {
+function row(resource: string, index: number): ChunkRow {
   return {
-    id: `${resourceId}-${index}`,
-    resource_id: resourceId,
-    resource_name: `resource-${resourceId}`,
+    id: `${resource}-${index}`,
+    resource_id: resource,
+    resource_name: resource,
     file_path: `file-${index}.ts`,
     fingerprint: "fp",
     chunk_index: index,
-    start_line: index * 10 + 1,
-    end_line: index * 10 + 5,
+    start_line: index + 1,
+    end_line: index + 1,
     text: `text ${index}`,
     vector: [],
-    indexed_at: new Date().toISOString(),
-    distance,
+    indexed_at: "fixture",
+    relevance: 1 / (index + 1),
   };
 }
-
-describe("retrieve", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockEmbedOne.mockResolvedValue(DUMMY_VECTOR);
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.embed.mockResolvedValue(new Float32Array(768));
+});
+describe("hybrid retrieval", () => {
+  it("does not embed an empty resource selection", async () => {
+    expect(await retrieve("q", [])).toEqual([]);
+    expect(mocks.embed).not.toHaveBeenCalled();
   });
-
-  it("returns empty array for empty resourceIds without calling embedOne", async () => {
-    const result = await retrieve("what?", []);
-    expect(result).toEqual([]);
-    expect(mockEmbedOne).not.toHaveBeenCalled();
+  it("retrieves each resource independently and gives all three their full cap", async () => {
+    mocks.search.mockImplementation(async (_q, _v, ids: string[]) =>
+      Array.from({ length: 15 }, (_, i) => row(ids[0] ?? "", i)),
+    );
+    const result = await retrieve("compare", ["a", "b", "c"]);
+    expect(
+      ["a", "b", "c"].map(
+        (id) => result.filter((r) => r.resource_id === id).length,
+      ),
+    ).toEqual([10, 10, 10]);
+    expect(result.slice(0, 3).map((r) => r.resource_id)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(mocks.embed).toHaveBeenCalledOnce();
+    expect(mocks.search).toHaveBeenCalledWith(
+      "compare",
+      expect.any(Float32Array),
+      ["b"],
+      40,
+    );
   });
-
-  it("enforces per-resource cap", async () => {
-    const rows = Array.from({ length: 15 }, (_, i) => makeRow("r1", i * 0.1, i));
-    mockSearchChunks.mockResolvedValue(rows);
-
-    const result = await retrieve("q", ["r1"], { perResourceCap: 10, totalCap: 100 });
-    expect(result).toHaveLength(10);
-  });
-
-  it("sorts globally by distance after per-resource capping (lower distance first)", async () => {
-    // r1 rows are less relevant (higher distance), r2 rows are more relevant (lower distance)
-    const r1rows = Array.from({ length: 3 }, (_, i) => makeRow("r1", 0.8 + i * 0.01, i));
-    const r2rows = Array.from({ length: 3 }, (_, i) => makeRow("r2", 0.1 + i * 0.01, i));
-    // searchChunks returns r1 first (map insertion order would keep r1 first)
-    mockSearchChunks.mockResolvedValue([...r1rows, ...r2rows]);
-
-    const result = await retrieve("q", ["r1", "r2"], { perResourceCap: 10, totalCap: 100 });
-
-    const scores = result.map((c) => c.score);
-    for (let i = 1; i < scores.length; i++) {
-      expect(scores[i]!).toBeGreaterThanOrEqual(scores[i - 1]!);
-    }
-    // The first chunk should be from r2 (lower distance)
-    expect(result[0]!.resource_id).toBe("r2");
-  });
-
-  it("populates score with the actual distance value", async () => {
-    const rows = [makeRow("r1", 0.42, 0)];
-    mockSearchChunks.mockResolvedValue(rows);
-
-    const result = await retrieve("q", ["r1"]);
-    expect(result[0]!.score).toBe(0.42);
-  });
-
-  it("preserves chunk line spans from the store", async () => {
-    const rows = [makeRow("r1", 0.42, 2)];
-    mockSearchChunks.mockResolvedValue(rows);
-
-    const result = await retrieve("q", ["r1"]);
-    expect(result[0]!.start_line).toBe(21);
-    expect(result[0]!.end_line).toBe(25);
-  });
-
-  it("enforces totalCap after global sort", async () => {
-    const rows = [
-      ...Array.from({ length: 5 }, (_, i) => makeRow("r1", 0.5 + i * 0.01, i)),
-      ...Array.from({ length: 5 }, (_, i) => makeRow("r2", 0.6 + i * 0.01, i)),
-    ];
-    mockSearchChunks.mockResolvedValue(rows);
-
-    const result = await retrieve("q", ["r1", "r2"], { perResourceCap: 10, totalCap: 6 });
+  it("enforces the total cap while preserving cross-resource coverage", async () => {
+    mocks.search.mockImplementation(async (_q, _v, ids: string[]) =>
+      Array.from({ length: 10 }, (_, i) => row(ids[0] ?? "", i)),
+    );
+    const result = await retrieve("q", ["a", "b"], { totalCap: 6 });
     expect(result).toHaveLength(6);
+    expect(result.filter((r) => r.resource_id === "b")).toHaveLength(3);
   });
-
-  it("collapses duplicate file hits when requested", async () => {
-    mockSearchChunks.mockResolvedValue([
-      {
-        ...makeRow("r1", 0.1, 0),
-        file_path: "src/chunker.ts",
-      },
-      {
-        ...makeRow("r1", 0.11, 1),
-        file_path: "src/chunker.ts",
-      },
-      {
-        ...makeRow("r1", 0.12, 2),
-        file_path: "src/retriever.ts",
-      },
-    ]);
-
-    const result = await retrieve("q", ["r1"], {
-      perResourceCap: 10,
-      totalCap: 10,
-      collapseByFile: true,
-    });
-
-    expect(result.map((chunk) => chunk.file_path)).toEqual([
-      "src/chunker.ts",
-      "src/retriever.ts",
+  it("retains RRF scores and original line spans", async () => {
+    mocks.search.mockResolvedValue([row("a", 2)]);
+    expect(await retrieve("q", ["a"])).toEqual([
+      expect.objectContaining({ score: 1 / 3, start_line: 3, end_line: 3 }),
     ]);
   });
-
-  it("keeps split chunks from the same file in chunk order when scores tie", async () => {
-    mockSearchChunks.mockResolvedValue([
-      {
-        ...makeRow("r1", 0.1, 2),
-        file_path: "src/dense.ts",
-        start_line: 11,
-        end_line: 20,
-      },
-      {
-        ...makeRow("r1", 0.1, 1),
-        file_path: "src/dense.ts",
-        start_line: 1,
-        end_line: 10,
-      },
+  it("deduplicates repeated spans without dropping other spans in the same file", async () => {
+    mocks.search.mockResolvedValue([
+      row("a", 0),
+      row("a", 0),
+      { ...row("a", 1), file_path: "file-0.ts" },
     ]);
-
-    const result = await retrieve("q", ["r1"], {
-      perResourceCap: 10,
-      totalCap: 10,
-      collapseByFile: false,
-    });
-
-    expect(result.map((chunk) => chunk.chunk_index)).toEqual([1, 2]);
-    expect(result.map((chunk) => [chunk.start_line, chunk.end_line])).toEqual([
-      [1, 10],
-      [11, 20],
-    ]);
-  });
-
-  it("biases fast codex retrieval away from tooling artifacts and toward source files", async () => {
-    mockSearchChunks.mockResolvedValue([
-      {
-        ...makeRow("r1", 0.1, 0),
-        file_path: ".crush/.gitignore",
-      },
-      {
-        ...makeRow("r1", 0.11, 1),
-        file_path: "src/indexing/chunker.ts",
-      },
-      {
-        ...makeRow("r1", 0.12, 2),
-        file_path: "test/indexing/chunker.test.ts",
-      },
-    ]);
-
-    const result = await retrieve("q", ["r1"], {
-      perResourceCap: 10,
-      totalCap: 10,
-      pathBias: "codex-fast",
-    });
-
-    expect(result[0]?.file_path).toBe("src/indexing/chunker.ts");
-    expect(result[result.length - 1]?.file_path).toBe(".crush/.gitignore");
+    expect(await retrieve("q", ["a"])).toHaveLength(2);
+    expect(await retrieve("q", ["a"], { collapseByFile: true })).toHaveLength(
+      1,
+    );
   });
 });

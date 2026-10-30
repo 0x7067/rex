@@ -1,0 +1,86 @@
+{
+  "scope": "Eight labeled questions over eight Rex source files; retrieval only, not answer-faithfulness or general production quality",
+  "profile": {
+    "embed_model": "nomic-ai/nomic-embed-text-v1.5",
+    "chunker_version": "boundary-v3",
+    "index_schema_version": "3",
+    "embed_source": "hf:nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.Q8_0.gguf#0188c9bf409793f810680a5a431e7b899c46104c",
+    "encoding_version": "nomic-retrieval-with-path-v1",
+    "vector_dimensions": 768
+  },
+  "corpus_sha256": "994b2840acd4523c6743b7b57c4049184fcea0e9c95d654ff42840ca68d35f12",
+  "node_version": "v26.12.1",
+  "questions": 8,
+  "chunks": 18,
+  "indexing_ms": 8628.110111,
+  "dense": {
+    "hit_rate_at_5": 0.75,
+    "mrr_at_5": 0.4,
+    "p50_search_ms": 3.114079999999376,
+    "p95_search_ms": 6.772641999999905
+  },
+  "hybrid": {
+    "hit_rate_at_5": 0.875,
+    "mrr_at_5": 0.71875,
+    "p50_search_ms": 5.736464999999953,
+    "p95_search_ms": 8.584460000000036
+  },
+  "results": [
+    {
+      "question": "Where are Nomic search_document and search_query prefixes applied?",
+      "dense_rank": 0,
+      "hybrid_rank": 4,
+      "dense_ms": 6.772641999999905,
+      "hybrid_ms": 8.584460000000036
+    },
+    {
+      "question": "whenNotMatchedBySourceDelete resource_id",
+      "dense_rank": 4,
+      "hybrid_rank": 1,
+      "dense_ms": 3.39500599999883,
+      "hybrid_ms": 7.39767700000084
+    },
+    {
+      "question": "How are nested .gitignore rules honored when walking files?",
+      "dense_rank": 2,
+      "hybrid_rank": 1,
+      "dense_ms": 3.114079999999376,
+      "hybrid_ms": 6.427897999999914
+    },
+    {
+      "question": "What stops two remote repositories with the same name from sharing a clone directory?",
+      "dense_rank": 1,
+      "hybrid_rank": 1,
+      "dense_ms": 3.147274999999354,
+      "hybrid_ms": 5.726579000000129
+    },
+    {
+      "question": "When does asking a question skip a resource with an incompatible embedding index?",
+      "dense_rank": 5,
+      "hybrid_rank": 1,
+      "dense_ms": 2.9909549999993033,
+      "hybrid_ms": 5.736464999999953
+    },
+    {
+      "question": "What happens if an answer has no valid source citations?",
+      "dense_rank": 4,
+      "hybrid_rank": 1,
+      "dense_ms": 2.9612120000001596,
+      "hybrid_ms": 4.9849580000009155
+    },
+    {
+      "question": "How is the actual GGUF source included in embedding cache identity?",
+      "dense_rank": 0,
+      "hybrid_rank": 0,
+      "dense_ms": 2.82320400000026,
+      "hybrid_ms": 4.974847999999838
+    },
+    {
+      "question": "How does sync record a summary generation failure and keep the previous successful timestamp?",
+      "dense_rank": 1,
+      "hybrid_rank": 2,
+      "dense_ms": 2.9099160000005213,
+      "hybrid_ms": 4.418435999999929
+    }
+  ]
+}

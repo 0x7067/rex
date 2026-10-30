@@ -38,7 +38,9 @@ describe("enumerate", () => {
     writeFile("src/index.ts", "export {}");
     writeFile("node_modules/foo/index.js", "module.exports = {}");
     const entries = await collect(enumerate(tmpDir, [], []));
-    expect(entries.every((e) => !e.relativePath.includes("node_modules"))).toBe(true);
+    expect(entries.every((e) => !e.relativePath.includes("node_modules"))).toBe(
+      true,
+    );
   });
 
   it("excludes Bun lockfiles by default", async () => {
@@ -46,7 +48,9 @@ describe("enumerate", () => {
     writeFile("bun.lock", "lock");
     writeFile("bun.lockb", "binary");
     const entries = await collect(enumerate(tmpDir, [], []));
-    expect(entries.every((e) => !e.relativePath.startsWith("bun.lock"))).toBe(true);
+    expect(entries.every((e) => !e.relativePath.startsWith("bun.lock"))).toBe(
+      true,
+    );
   });
 
   it("respects include globs", async () => {
@@ -61,7 +65,9 @@ describe("enumerate", () => {
     writeFile("src/a.ts", "");
     writeFile("src/b.test.ts", "");
     const entries = await collect(enumerate(tmpDir, [], ["**/*.test.ts"]));
-    expect(entries.every((e) => !e.relativePath.endsWith(".test.ts"))).toBe(true);
+    expect(entries.every((e) => !e.relativePath.endsWith(".test.ts"))).toBe(
+      true,
+    );
   });
 
   it("excludes minified and generated files by default", async () => {
@@ -114,5 +120,45 @@ describe("fingerprint", () => {
     fs.writeFileSync(abs, "version2");
     const h2 = await fingerprint(e);
     expect(h1).not.toBe(h2);
+  });
+});
+
+describe("private and ignored content", () => {
+  it("excludes credential-shaped files even without gitignore", async () => {
+    for (const file of [
+      ".env",
+      ".env.local",
+      "private.pem",
+      "private.key",
+      "id_rsa",
+      ".npmrc",
+      "src/index.ts",
+    ])
+      writeFile(file, "SYNTHETIC FIXTURE");
+    expect(
+      (await collect(enumerate(tmpDir, [], []))).map(
+        (entry) => entry.relativePath,
+      ),
+    ).toEqual(["src/index.ts"]);
+  });
+  it("respects nested gitignore rules and negations", async () => {
+    writeFile(".gitignore", "*.log\n");
+    writeFile("src/.gitignore", "!keep.log\nprivate.txt\n");
+    for (const file of [
+      "root.log",
+      "src/drop.log",
+      "src/keep.log",
+      "src/private.txt",
+      "src/index.ts",
+    ])
+      writeFile(file, "fixture");
+    const names = (await collect(enumerate(tmpDir, [], []))).map(
+      (entry) => entry.relativePath,
+    );
+    expect(names).toContain("src/keep.log");
+    expect(names).toContain("src/index.ts");
+    expect(names).not.toContain("root.log");
+    expect(names).not.toContain("src/drop.log");
+    expect(names).not.toContain("src/private.txt");
   });
 });

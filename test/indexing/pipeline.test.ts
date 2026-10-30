@@ -1,157 +1,147 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createResource } from "../../src/core/resource.js";
-
-const mockEmbed = vi.fn();
-const mockCountTokens = vi.fn();
-const mockGetEmbedContextSize = vi.fn();
-const mockGetChunkFingerprints = vi.fn();
-const mockDeleteChunks = vi.fn();
-const mockDeleteChunksForFile = vi.fn();
-const mockWriteChunks = vi.fn();
-
+const mocks = vi.hoisted(() => ({ embed: vi.fn(), tokens: vi.fn() }));
 vi.mock("../../src/indexing/embedder.js", () => ({
-  countTokens: (...args: unknown[]) => mockCountTokens(...args),
-  embed: (...args: unknown[]) => mockEmbed(...args),
-  getEmbedContextSize: (...args: unknown[]) => mockGetEmbedContextSize(...args),
+  embed: mocks.embed,
+  countTokens: mocks.tokens,
+  getEmbedContextSize: () => 4096,
   getEmbedModel: () => "nomic-ai/nomic-embed-text-v1.5",
+  getEmbeddingSource: () => "fixture.gguf",
 }));
-
-vi.mock("../../src/indexing/store.js", () => ({
-  deleteChunks: (...args: unknown[]) => mockDeleteChunks(...args),
-  deleteChunksForFile: (...args: unknown[]) => mockDeleteChunksForFile(...args),
-  getChunkFingerprints: (...args: unknown[]) => mockGetChunkFingerprints(...args),
-  writeChunks: (...args: unknown[]) => mockWriteChunks(...args),
-}));
-
-const { embedAndStoreChunks, indexResourceFiles, prepareChunksForEntry } = await import("../../src/indexing/pipeline.js");
-
-let tmpDir: string;
-
-beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rex-pipeline-test-"));
-  process.env["REX_HOME"] = tmpDir;
+const { indexResourceFiles, prepareChunksForEntry } =
+  await import("../../src/indexing/pipeline.js");
+const { getResourceChunks, resetDb } =
+  await import("../../src/indexing/store.js");
+let root: string;
+beforeEach(async () => {
+  await resetDb();
+  root = fs.mkdtempSync(
+    path.join(
+      fs.existsSync("/dev/shm") ? "/dev/shm" : os.tmpdir(),
+      "rex-pipeline-",
+    ),
+  );
+  process.env["REX_HOME"] = path.join(root, "state");
   vi.clearAllMocks();
-  mockGetEmbedContextSize.mockReturnValue(4096);
-  mockGetChunkFingerprints.mockResolvedValue(new Map());
-  mockDeleteChunks.mockResolvedValue(undefined);
-  mockDeleteChunksForFile.mockResolvedValue(undefined);
+  mocks.tokens.mockImplementation(async (text: string) =>
+    Math.ceil(text.length / 4),
+  );
+  mocks.embed.mockImplementation(async (texts: string[]) =>
+    texts.map(() => {
+      const v = new Float32Array(768);
+      v[0] = 1;
+      return v;
+    }),
+  );
 });
-
-afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+afterEach(async () => {
+  await resetDb();
+  fs.rmSync(root, { recursive: true, force: true });
   delete process.env["REX_HOME"];
 });
-
-function makeChunk(id: string, text: string) {
-  return {
-    resource_id: "resource-1",
-    resource_name: "resource",
-    file_path: "src/file.ts",
-    fingerprint: "fp",
-    chunk_index: 0,
-    start_line: 1,
-    end_line: text.length === 0 ? 1 : text.split("\n").length,
-    text,
-    chunk_hash: id,
-    estimated_tokens: Math.max(1, Math.ceil(text.length / 4)),
-  };
+function resource() {
+  return createResource({
+    name: "fixture",
+    type: "local",
+    source: root,
+    normalized_source: root,
+    notes: "",
+    include_rules: [],
+    exclude_rules: [],
+    snapshot_metadata: { type: "local", absolute_path: root },
+  });
 }
-
-describe("embedAndStoreChunks", () => {
-  it("reuses cached embeddings for identical chunk hashes", async () => {
-    mockEmbed.mockResolvedValue([new Float32Array([0.1, 0.2, 0.3])]);
-
-    const chunk = makeChunk("a".repeat(64), "hello world");
-
-    await embedAndStoreChunks([chunk]);
-    await embedAndStoreChunks([chunk]);
-
-    expect(mockEmbed).toHaveBeenCalledTimes(1);
-    expect(mockWriteChunks).toHaveBeenCalledTimes(2);
+function index(r: ReturnType<typeof resource>, fullSync = false) {
+  return indexResourceFiles({
+    resource: r,
+    materializedDir: root,
+    includeRules: ["*.ts"],
+    excludeRules: [],
+    fullSync,
   });
-
-  it("throws when embed returns fewer vectors than requested", async () => {
-    mockEmbed.mockResolvedValue([]);
-
-    const chunk = makeChunk("b".repeat(64), "hello world");
-
-    await expect(embedAndStoreChunks([chunk])).rejects.toThrow(
-      "Embedding returned 0 vectors for 1 chunks",
-    );
-    expect(mockWriteChunks).not.toHaveBeenCalled();
-  });
-});
-
-describe("prepareChunksForEntry", () => {
-  it("re-splits token-dense chunks before embedding and preserves file line spans", async () => {
-    const denseFile = path.join(tmpDir, "dense.ts");
-    const lines = Array.from({ length: 40 }, (_, index) => `line-${index + 1} ${"x".repeat(50)}`);
-    fs.writeFileSync(denseFile, lines.join("\n"));
-
-    mockCountTokens.mockImplementation(async (text: string) =>
-      text.length > 1500 ? 5000 : 1200
-    );
-
-    const prepared = await prepareChunksForEntry(
-      {
-        absolutePath: denseFile,
-        relativePath: "src/dense.ts",
-        sizeBytes: fs.statSync(denseFile).size,
-      },
-      "resource-1",
-      "resource",
-    );
-
-    expect(prepared).not.toBeNull();
-    expect(prepared?.chunks.length).toBeGreaterThan(1);
-    expect(prepared?.chunks.map((chunk) => chunk.chunk_index)).toEqual(
-      prepared?.chunks.map((_, index) => index),
-    );
-    expect(prepared?.chunks[0]?.start_line).toBe(1);
-    expect(prepared?.chunks.at(-1)?.end_line).toBe(40);
-  });
-});
-
-describe("indexResourceFiles", () => {
-  it("skips token counting for unchanged files after fingerprint matching", async () => {
-    const srcDir = path.join(tmpDir, "src");
-    fs.mkdirSync(srcDir, { recursive: true });
-    const filePath = path.join(srcDir, "unchanged.ts");
-    fs.writeFileSync(filePath, "export const unchanged = true;\n");
-
-    const fingerprint = crypto
-      .createHash("sha256")
-      .update(fs.readFileSync(filePath))
-      .digest("hex");
-    mockGetChunkFingerprints.mockResolvedValue(new Map([["src/unchanged.ts", fingerprint]]));
-
-    const resource = createResource({
-      name: "fixture",
-      type: "local",
-      source: tmpDir,
-      normalized_source: tmpDir,
-      notes: "",
-      include_rules: [],
-      exclude_rules: [],
-      snapshot_metadata: {
-        type: "local",
-        absolute_path: tmpDir,
-      },
-    });
-
-    const result = await indexResourceFiles({
-      resource,
-      materializedDir: tmpDir,
-      includeRules: [],
-      excludeRules: [],
-    });
-
+}
+describe("atomic incremental indexing", () => {
+  it("skips tokenization and embedding for unchanged files", async () => {
+    fs.writeFileSync(path.join(root, "file.ts"), "const x=1");
+    const r = resource();
+    await index(r);
+    vi.clearAllMocks();
+    const result = await index(r);
     expect(result.filesChanged).toBe(0);
-    expect(result.chunksUpdated).toBe(0);
-    expect(mockCountTokens).not.toHaveBeenCalled();
+    expect(mocks.tokens).not.toHaveBeenCalled();
+    expect(mocks.embed).not.toHaveBeenCalled();
+    expect(await getResourceChunks(r.id)).toHaveLength(1);
+  });
+  it("reuses correctly namespaced cached embeddings on a full rebuild", async () => {
+    fs.writeFileSync(path.join(root, "file.ts"), "const x=1");
+    const r = resource();
+    await index(r, true);
+    await index(r, true);
+    expect(mocks.embed).toHaveBeenCalledTimes(1);
+  });
+  it("preserves previous rows if full-reindex embedding fails", async () => {
+    fs.writeFileSync(path.join(root, "file.ts"), "old content");
+    const r = resource();
+    await index(r, true);
+    fs.writeFileSync(path.join(root, "file.ts"), "new content");
+    mocks.embed.mockRejectedValueOnce(new Error("embedding failed"));
+    await expect(index(r, true)).rejects.toThrow("embedding failed");
+    expect((await getResourceChunks(r.id))[0]?.text).toBe("old content");
+  });
+  it("rejects missing vectors before modifying the existing index", async () => {
+    fs.writeFileSync(path.join(root, "file.ts"), "old content");
+    const r = resource();
+    await index(r);
+    fs.writeFileSync(path.join(root, "file.ts"), "new content");
+    mocks.embed.mockResolvedValueOnce([]);
+    await expect(index(r)).rejects.toThrow("Embedding returned 0 vectors");
+    expect((await getResourceChunks(r.id))[0]?.text).toBe("old content");
+  });
+  it("deletes removed files while keeping unchanged chunks in the replacement", async () => {
+    fs.writeFileSync(path.join(root, "a.ts"), "keep");
+    fs.writeFileSync(path.join(root, "b.ts"), "delete");
+    const r = resource();
+    await index(r);
+    fs.unlinkSync(path.join(root, "b.ts"));
+    const result = await index(r);
+    expect((await getResourceChunks(r.id)).map((row) => row.file_path)).toEqual(
+      ["a.ts"],
+    );
+    expect(result.allChunkTexts).toEqual([expect.stringContaining("keep")]);
+  });
+  it("deletes the final file with an empty atomic replacement", async () => {
+    fs.writeFileSync(path.join(root, "file.ts"), "delete");
+    const r = resource();
+    await index(r);
+    fs.unlinkSync(path.join(root, "file.ts"));
+    await index(r);
+    expect(await getResourceChunks(r.id)).toEqual([]);
+  });
+  it("re-splits token-dense inputs and preserves line provenance", async () => {
+    const file = path.join(root, "dense.ts");
+    fs.writeFileSync(
+      file,
+      Array.from({ length: 40 }, (_, i) => `line ${i} ${"x".repeat(50)}`).join(
+        "\n",
+      ),
+    );
+    mocks.tokens.mockImplementation(async (text: string) =>
+      text.length > 1500 ? 5000 : 1200,
+    );
+    const result = await prepareChunksForEntry(
+      {
+        absolutePath: file,
+        relativePath: "dense.ts",
+        sizeBytes: fs.statSync(file).size,
+      },
+      "r",
+      "fixture",
+    );
+    expect(result?.chunks.length).toBeGreaterThan(1);
+    expect(result?.chunks[0]?.start_line).toBe(1);
+    expect(result?.chunks.at(-1)?.end_line).toBe(40);
   });
 });

@@ -35,26 +35,31 @@ check_command() {
 }
 
 if command -v node >/dev/null 2>&1; then
-  NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-  if [[ "$NODE_MAJOR" -ge 20 ]]; then
+  if node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 12) ? 0 : 1)'; then
     pass "Node.js $(node --version) is supported."
   else
-    fail "Node.js $(node --version) is too old. Install Node.js 20 or newer."
+    fail "Node.js $(node --version) is too old. Install Node.js 22.12 or newer."
   fi
 else
-  fail "Node.js is not installed. Install Node.js 20 or newer."
+  fail "Node.js is not installed. Install Node.js 22.12 or newer."
 fi
 
 check_command "npm" "npm is available." "npm is missing from PATH."
 check_command "claude" "Claude Code CLI is available." "Claude Code CLI is missing from PATH."
+if command -v claude >/dev/null 2>&1; then
+  CLAUDE_HELP="$(claude --help 2>/dev/null)"
+  if [[ "$CLAUDE_HELP" == *"--safe-mode"* && "$CLAUDE_HELP" == *"--strict-mcp-config"* ]]; then
+    pass "Claude Code supports isolated generation with your existing login."
+  else
+    fail "Update Claude Code; rex requires --safe-mode and --strict-mcp-config support."
+  fi
+fi
 
 if command -v ollama >/dev/null 2>&1; then
   if ! OLLAMA_LIST="$(ollama list 2>/dev/null)"; then
     note "Ollama is installed, but the local service is unreachable. Start Ollama if you want the Ollama answer-provider path."
-  elif printf '%s\n' "$OLLAMA_LIST" | grep -q 'nomic-embed-text'; then
-    pass "Ollama has the nomic-embed-text model available for the Ollama answer-provider path."
   else
-    note "Ollama is installed, but nomic-embed-text is missing. Run: ollama pull nomic-embed-text if you want the Ollama answer-provider path."
+    pass "Ollama is reachable for answer generation. Embeddings use node-llama-cpp separately."
   fi
 else
   note "Ollama is optional for the default onboarding path."

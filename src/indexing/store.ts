@@ -1,221 +1,331 @@
 import crypto from "node:crypto";
 import * as lancedb from "@lancedb/lancedb";
+import {
+  Field,
+  FixedSizeList,
+  Float32,
+  Float64,
+  Schema,
+  Utf8,
+  Vector,
+} from "apache-arrow";
+import { z } from "zod";
 import type { Chunk } from "./chunker.js";
 import { lanceDir } from "../core/config.js";
 
 const VECTOR_DIM = 768;
-
-export type ChunkRow = {
-  id: string;
-  resource_id: string;
-  resource_name: string;
-  file_path: string;
-  fingerprint: string;
-  chunk_index: number;
-  start_line: number;
-  end_line: number;
-  text: string;
-  vector: number[];
-  indexed_at: string;
-  distance?: number;
-  [key: string]: unknown;
-};
-
-export type SummaryRow = {
-  id: string;
-  resource_id: string;
-  resource_name: string;
-  block_type: string;
-  content: string;
-  generated_at: string;
-  based_on_fingerprints: string;
-  [key: string]: unknown;
-};
+const vectorSchema = z.preprocess(
+  (value) =>
+    value instanceof Vector
+      ? Array.from(value.toArray())
+      : value instanceof Float32Array
+        ? Array.from(value)
+        : value,
+  z.array(z.number().finite()).length(VECTOR_DIM),
+);
+const ChunkRowSchema = z.object({
+  id: z.string(),
+  resource_id: z.string(),
+  resource_name: z.string(),
+  file_path: z.string(),
+  fingerprint: z.string(),
+  chunk_index: z.number(),
+  start_line: z.number(),
+  end_line: z.number(),
+  text: z.string(),
+  search_text: z.string().optional(),
+  vector: vectorSchema,
+  indexed_at: z.string(),
+  distance: z.number().optional(),
+  relevance: z.number().optional(),
+});
+export type ChunkRow = z.infer<typeof ChunkRowSchema>;
+const SummaryRowSchema = z.object({
+  id: z.string(),
+  resource_id: z.string(),
+  resource_name: z.string(),
+  block_type: z.string(),
+  content: z.string(),
+  generated_at: z.string(),
+  based_on_fingerprints: z.string(),
+});
+export type SummaryRow = z.infer<typeof SummaryRowSchema>;
 
 let db: lancedb.Connection | null = null;
-
+let chunksTable: Promise<lancedb.Table> | null = null;
 async function getDb(): Promise<lancedb.Connection> {
-  if (!db) {
-    db = await lancedb.connect(lanceDir());
-  }
+  db ??= await lancedb.connect(lanceDir());
   return db;
 }
-
-async function getChunksTable(conn: lancedb.Connection): Promise<lancedb.Table> {
-  const tables = await conn.tableNames();
-  if (tables.includes("chunks")) {
-    return conn.openTable("chunks");
-  }
-  // Create with a dummy row to establish schema, then delete it
-  const dummy: ChunkRow = {
-    id: "__init__",
-    resource_id: "__init__",
-    resource_name: "__init__",
-    file_path: "",
-    fingerprint: "",
-    chunk_index: 0,
-    start_line: 0,
-    end_line: 0,
-    text: "",
-    vector: new Array(VECTOR_DIM).fill(0) as number[],
-    indexed_at: new Date().toISOString(),
-  };
-  const table = await conn.createTable("chunks", [dummy]);
-  await table.delete('id = "__init__"');
-  return table;
+function sqlString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+function resourceFilter(ids: string[]): string {
+  return `resource_id IN (${ids.map(sqlString).join(", ")})`;
 }
 
-async function getSummariesTable(conn: lancedb.Connection): Promise<lancedb.Table> {
-  const tables = await conn.tableNames();
-  if (tables.includes("summaries")) {
+async function getChunksTable(): Promise<lancedb.Table> {
+  chunksTable ??= openChunksTable().catch((error: unknown) => {
+    chunksTable = null;
+    throw error;
+  });
+  return chunksTable;
+}
+async function openChunksTable(): Promise<lancedb.Table> {
+  const conn = await getDb();
+  if ((await conn.tableNames()).includes("chunks")) {
+    const table = await conn.openTable("chunks");
+    // Old indexes retain their data; the next sync migrates the encoding profile.
+    if (
+      !(await table.schema()).fields.some(
+        (field) => field.name === "search_text",
+      )
+    ) {
+      await table.addColumns([
+        { name: "search_text", valueSql: "file_path || '\n' || text" },
+      ]);
+    }
+    return table;
+  }
+  const strings = [
+    "id",
+    "resource_id",
+    "resource_name",
+    "file_path",
+    "fingerprint",
+    "text",
+    "search_text",
+    "indexed_at",
+  ];
+  const schema = new Schema([
+    ...strings.map((name) => new Field(name, new Utf8(), true)),
+    ...["chunk_index", "start_line", "end_line"].map(
+      (name) => new Field(name, new Float64(), true),
+    ),
+    new Field(
+      "vector",
+      new FixedSizeList(VECTOR_DIM, new Field("item", new Float32(), true)),
+      true,
+    ),
+  ]);
+  return conn.createEmptyTable("chunks", schema);
+}
+async function getSummariesTable(): Promise<lancedb.Table> {
+  const conn = await getDb();
+  if ((await conn.tableNames()).includes("summaries"))
     return conn.openTable("summaries");
-  }
-  const dummy: SummaryRow = {
-    id: "__init__",
-    resource_id: "__init__",
-    resource_name: "__init__",
-    block_type: "",
-    content: "",
-    generated_at: new Date().toISOString(),
-    based_on_fingerprints: "[]",
-  };
-  const table = await conn.createTable("summaries", [dummy]);
-  await table.delete('id = "__init__"');
-  return table;
+  return conn.createEmptyTable(
+    "summaries",
+    new Schema(
+      Object.keys(SummaryRowSchema.shape).map(
+        (name) => new Field(name, new Utf8(), true),
+      ),
+    ),
+  );
 }
-
+async function buildTextIndex(table: lancedb.Table): Promise<void> {
+  await table.createIndex("search_text", {
+    config: lancedb.Index.fts({
+      baseTokenizer: "code",
+      lowercase: true,
+      stem: false,
+      removeStopWords: false,
+      maxTokenLength: 256,
+    }),
+    replace: true,
+  });
+}
+function parseRows(rows: unknown[]): ChunkRow[] {
+  return rows.map((value) => {
+    const raw = z
+      .record(z.string(), z.unknown())
+      .parse(
+        typeof value === "object" && value !== null ? { ...value } : value,
+      );
+    return ChunkRowSchema.parse({
+      ...raw,
+      distance: raw["_distance"] ?? raw["distance"],
+      relevance: raw["_relevance_score"],
+    });
+  });
+}
+export function createChunkRows(
+  chunks: Chunk[],
+  vectors: Float32Array[],
+): ChunkRow[] {
+  if (vectors.length !== chunks.length)
+    throw new Error("Each chunk must have exactly one embedding");
+  return chunks.map((chunk, index) =>
+    ChunkRowSchema.parse({
+      ...chunk,
+      id: crypto
+        .createHash("sha256")
+        .update(
+          `${chunk.resource_id}\0${chunk.file_path}\0${chunk.chunk_index}`,
+        )
+        .digest("hex"),
+      search_text: `${chunk.file_path}\n${chunk.text}`,
+      vector: vectors[index],
+      indexed_at: new Date().toISOString(),
+    }),
+  );
+}
 export async function writeChunks(
   chunks: Chunk[],
   vectors: Float32Array[],
 ): Promise<void> {
   if (chunks.length === 0) return;
-  const conn = await getDb();
-  const table = await getChunksTable(conn);
-
-  const rows: ChunkRow[] = chunks.map((chunk, i) => ({
-    id: crypto.randomUUID(),
-    resource_id: chunk.resource_id,
-    resource_name: chunk.resource_name,
-    file_path: chunk.file_path,
-    fingerprint: chunk.fingerprint,
-    chunk_index: chunk.chunk_index,
-    start_line: chunk.start_line,
-    end_line: chunk.end_line,
-    text: chunk.text,
-    vector: Array.from(vectors[i] ?? new Float32Array(VECTOR_DIM)),
-    indexed_at: new Date().toISOString(),
+  const table = await getChunksTable();
+  await table.add(createChunkRows(chunks, vectors));
+  await buildTextIndex(table);
+}
+/** Replace one resource in a single table commit, preserving all other resources. */
+export async function replaceResourceChunks(
+  resourceId: string,
+  rows: ChunkRow[],
+): Promise<void> {
+  if (rows.some((row) => row.resource_id !== resourceId))
+    throw new Error("Cannot replace chunks belonging to another resource");
+  const table = await getChunksTable();
+  const data = rows.map((row) => ({
+    ...ChunkRowSchema.parse(row),
+    search_text: `${row.file_path}\n${row.text}`,
   }));
-
-  await table.add(rows);
+  await table
+    .mergeInsert("id")
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .whenNotMatchedBySourceDelete({
+      where: `resource_id = ${sqlString(resourceId)}`,
+    })
+    .execute(data);
+  await buildTextIndex(table);
 }
-
+export async function getResourceChunks(
+  resourceId: string,
+): Promise<ChunkRow[]> {
+  const table = await getChunksTable();
+  return parseRows(
+    await table
+      .query()
+      .where(resourceFilter([resourceId]))
+      .toArray(),
+  );
+}
 export async function deleteChunks(resourceId: string): Promise<void> {
-  const conn = await getDb();
-  const table = await getChunksTable(conn);
-  await table.delete(`resource_id = '${resourceId}'`);
+  await (await getChunksTable()).delete(resourceFilter([resourceId]));
 }
-
 export async function deleteChunksForFile(
   resourceId: string,
   filePath: string,
 ): Promise<void> {
-  const conn = await getDb();
-  const table = await getChunksTable(conn);
-  await table.delete(
-    `resource_id = '${resourceId}' AND file_path = '${filePath.replace(/'/g, "\\'")}'`,
+  await (
+    await getChunksTable()
+  ).delete(
+    `${resourceFilter([resourceId])} AND file_path = ${sqlString(filePath)}`,
   );
 }
-
+/** Dense-only search remains available for baseline evaluation. */
 export async function searchChunks(
   queryVector: Float32Array,
   resourceIds: string[],
   topK: number,
 ): Promise<ChunkRow[]> {
   if (resourceIds.length === 0) return [];
-  const conn = await getDb();
-  const table = await getChunksTable(conn);
-
-  const idList = resourceIds.map((id) => `'${id}'`).join(", ");
-  const filter = `resource_id IN (${idList})`;
-
-  const results = await table
-    .vectorSearch(Array.from(queryVector))
-    .distanceType("cosine")
-    .limit(topK)
-    .where(filter)
-    .toArray();
-
-  return (results as ChunkRow[]).map((row) => {
-    const distance = typeof row._distance === "number" ? row._distance : row.distance;
-    const out: ChunkRow = { ...row };
-    if (distance !== undefined) out.distance = distance;
-    return out;
-  });
+  return parseRows(
+    await (
+      await getChunksTable()
+    )
+      .vectorSearch(Array.from(queryVector))
+      .distanceType("cosine")
+      .limit(topK)
+      .where(resourceFilter(resourceIds))
+      .toArray(),
+  );
 }
-
+/** Built-in reciprocal rank fusion avoids comparing BM25 and cosine on one raw scale. */
+export async function searchHybridChunks(
+  question: string,
+  queryVector: Float32Array,
+  resourceIds: string[],
+  topK: number,
+): Promise<ChunkRow[]> {
+  if (resourceIds.length === 0) return [];
+  const table = await getChunksTable();
+  if (
+    !(await table.listIndices()).some((index) =>
+      index.columns.includes("search_text"),
+    )
+  )
+    await buildTextIndex(table);
+  const reranker = await lancedb.rerankers.RRFReranker.create();
+  return parseRows(
+    await table
+      .vectorSearch(Array.from(queryVector))
+      .distanceType("cosine")
+      .fullTextSearch(question, { columns: ["search_text"] })
+      .where(resourceFilter(resourceIds))
+      .rerank(reranker)
+      .limit(topK)
+      .toArray(),
+  );
+}
 export async function countChunks(resourceId: string): Promise<number> {
-  const conn = await getDb();
-  const table = await getChunksTable(conn);
-  const rows = await table
-    .query()
-    .where(`resource_id = '${resourceId}'`)
-    .select(["id"])
-    .toArray();
-  return rows.length;
+  return (await getChunksTable()).countRows(resourceFilter([resourceId]));
 }
-
 export async function getChunkFingerprints(
   resourceId: string,
 ): Promise<Map<string, string>> {
-  const conn = await getDb();
-  const table = await getChunksTable(conn);
-
-  const rows = await table
-    .query()
-    .where(`resource_id = '${resourceId}'`)
-    .select(["file_path", "fingerprint"])
-    .toArray();
-
-  const map = new Map<string, string>();
-  for (const row of rows) {
-    map.set(row["file_path"] as string, row["fingerprint"] as string);
-  }
-  return map;
+  return new Map(
+    (await getResourceChunks(resourceId)).map((row) => [
+      row.file_path,
+      row.fingerprint,
+    ]),
+  );
 }
-
-export async function writeSummaries(rows: Omit<SummaryRow, "id">[]): Promise<void> {
+export async function writeSummaries(
+  rows: Omit<SummaryRow, "id">[],
+): Promise<void> {
   if (rows.length === 0) return;
-  const conn = await getDb();
-  const table = await getSummariesTable(conn);
-
-  const withIds = rows.map((r) => ({
-    ...r,
-    id: crypto.randomUUID(),
-  })) as SummaryRow[];
-
-  await table.add(withIds);
+  const resourceId = rows[0]?.resource_id;
+  if (!resourceId || rows.some((row) => row.resource_id !== resourceId))
+    throw new Error("Summary replacement must belong to one resource");
+  const table = await getSummariesTable();
+  await table
+    .mergeInsert("id")
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .whenNotMatchedBySourceDelete({
+      where: `resource_id = ${sqlString(resourceId)}`,
+    })
+    .execute(
+      rows.map((row) => ({
+        ...row,
+        id: `${row.resource_id}:${row.block_type}`,
+      })),
+    );
 }
-
 export async function deleteSummaries(resourceId: string): Promise<void> {
-  const conn = await getDb();
-  const table = await getSummariesTable(conn);
-  await table.delete(`resource_id = '${resourceId}'`);
+  await (await getSummariesTable()).delete(resourceFilter([resourceId]));
 }
-
-export async function getSummaries(resourceIds: string[]): Promise<SummaryRow[]> {
+export async function getSummaries(
+  resourceIds: string[],
+): Promise<SummaryRow[]> {
   if (resourceIds.length === 0) return [];
-  const conn = await getDb();
-  const table = await getSummariesTable(conn);
-
-  const idList = resourceIds.map((id) => `'${id}'`).join(", ");
-  const rows = await table
+  const rows = await (
+    await getSummariesTable()
+  )
     .query()
-    .where(`resource_id IN (${idList})`)
+    .where(resourceFilter(resourceIds))
     .toArray();
-
-  return rows as SummaryRow[];
+  return rows.map((row: unknown) =>
+    SummaryRowSchema.parse(
+      typeof row === "object" && row !== null ? { ...row } : row,
+    ),
+  );
 }
-
 export async function resetDb(): Promise<void> {
+  db?.close();
   db = null;
+  chunksTable = null;
 }

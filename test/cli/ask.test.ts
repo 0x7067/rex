@@ -1,3 +1,4 @@
+import { getCurrentIndexProfile } from "../../src/indexing/profile.js";
 import { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RetryableProviderError } from "../../src/provider/interface.js";
@@ -39,11 +40,11 @@ describe("registerAsk", () => {
     mockGetProvider.mockReturnValue(null);
 
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const exitSpy = vi
-      .spyOn(process, "exit")
-      .mockImplementation(((code?: number) => {
-        throw new Error(`process.exit(${code})`);
-      }) as () => never);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number,
+    ) => {
+      throw new Error(`process.exit(${code})`);
+    }) as () => never);
 
     const program = new Command();
     program.option("--json");
@@ -61,17 +62,21 @@ describe("registerAsk", () => {
   });
 
   it("tells the user to sync before asking when no indexed resources are available", async () => {
-    mockGetProvider.mockReturnValue({ name: "ollama", model: null, endpoint: null });
+    mockGetProvider.mockReturnValue({
+      name: "ollama",
+      model: null,
+      endpoint: null,
+    });
     mockListResources.mockReturnValue([
       { id: "r1", name: "ravn", last_sync_status: "pending" },
     ]);
 
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const exitSpy = vi
-      .spyOn(process, "exit")
-      .mockImplementation(((code?: number) => {
-        throw new Error(`process.exit(${code})`);
-      }) as () => never);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number,
+    ) => {
+      throw new Error(`process.exit(${code})`);
+    }) as () => never);
 
     const program = new Command();
     program.option("--json");
@@ -89,12 +94,23 @@ describe("registerAsk", () => {
   });
 
   it("uses the fast codex profile first and retries once with the clean profile", async () => {
-    mockGetProvider.mockReturnValue({ name: "codex", model: null, endpoint: null });
+    mockGetProvider.mockReturnValue({
+      name: "codex",
+      model: null,
+      endpoint: null,
+    });
     mockListResources.mockReturnValue([
-      { id: "r1", name: "rex", last_sync_status: "ok" },
+      {
+        id: "r1",
+        name: "rex",
+        last_sync_status: "ok",
+        index_profile: getCurrentIndexProfile(),
+      },
     ]);
     mockGenerateAnswer
-      .mockRejectedValueOnce(new RetryableProviderError("meta chatter", "codex"))
+      .mockRejectedValueOnce(
+        new RetryableProviderError("meta chatter", "codex"),
+      )
       .mockResolvedValueOnce({ answer: "hello", sources: [] });
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -103,27 +119,21 @@ describe("registerAsk", () => {
     program.option("--json");
     registerAsk(program);
 
-    await program.parseAsync(["--json", "ask", "how does the chunker work?"], { from: "user" });
+    await program.parseAsync(["--json", "ask", "how does the chunker work?"], {
+      from: "user",
+    });
 
     expect(mockRetrieve).toHaveBeenNthCalledWith(
       1,
       "how does the chunker work?",
       ["r1"],
-      expect.objectContaining({
-        perResourceCap: 4,
-        totalCap: 12,
-        collapseByFile: true,
-        pathBias: "codex-fast",
-      }),
+      undefined,
     );
     expect(mockRetrieve).toHaveBeenNthCalledWith(
       2,
       "how does the chunker work?",
       ["r1"],
-      expect.objectContaining({
-        perResourceCap: 10,
-        totalCap: 40,
-      }),
+      undefined,
     );
     expect(mockGenerateAnswer).toHaveBeenNthCalledWith(
       1,
@@ -148,9 +158,18 @@ describe("registerAsk", () => {
   });
 
   it("prints only validated cited sources with line ranges in human output", async () => {
-    mockGetProvider.mockReturnValue({ name: "ollama", model: null, endpoint: null });
+    mockGetProvider.mockReturnValue({
+      name: "ollama",
+      model: null,
+      endpoint: null,
+    });
     mockListResources.mockReturnValue([
-      { id: "r1", name: "ravn", last_sync_status: "ok" },
+      {
+        id: "r1",
+        name: "ravn",
+        last_sync_status: "ok",
+        index_profile: getCurrentIndexProfile(),
+      },
     ]);
     mockGenerateAnswer.mockResolvedValue({
       answer: "Ravn has offices in three cities.",
@@ -169,18 +188,31 @@ describe("registerAsk", () => {
     program.option("--json");
     registerAsk(program);
 
-    await program.parseAsync(["ask", "where are the offices located"], { from: "user" });
+    await program.parseAsync(["ask", "where are the offices located"], {
+      from: "user",
+    });
 
     expect(logSpy).toHaveBeenCalledWith("\nSources:");
-    expect(logSpy).toHaveBeenCalledWith("  - ravn: office-locations.md (lines 1-18)");
+    expect(logSpy).toHaveBeenCalledWith(
+      "  - ravn: office-locations.md (lines 1-18)",
+    );
 
     logSpy.mockRestore();
   });
 
   it("includes line ranges in json output", async () => {
-    mockGetProvider.mockReturnValue({ name: "ollama", model: null, endpoint: null });
+    mockGetProvider.mockReturnValue({
+      name: "ollama",
+      model: null,
+      endpoint: null,
+    });
     mockListResources.mockReturnValue([
-      { id: "r1", name: "ravn", last_sync_status: "ok" },
+      {
+        id: "r1",
+        name: "ravn",
+        last_sync_status: "ok",
+        index_profile: getCurrentIndexProfile(),
+      },
     ]);
     mockGenerateAnswer.mockResolvedValue({
       answer: "Ravn has offices in three cities.",
@@ -199,28 +231,42 @@ describe("registerAsk", () => {
     program.option("--json");
     registerAsk(program);
 
-    await program.parseAsync(["--json", "ask", "where are the offices located"], { from: "user" });
+    await program.parseAsync(
+      ["--json", "ask", "where are the offices located"],
+      { from: "user" },
+    );
 
-    expect(logSpy).toHaveBeenCalledWith(JSON.stringify({
-      answer: "Ravn has offices in three cities.",
-      sources: [
-        {
-          resource: "ravn",
-          path: "office-locations.md",
-          lines: [1, 18],
-        },
-      ],
-      resources_queried: ["ravn"],
-      resources_skipped: [],
-    }));
+    expect(logSpy).toHaveBeenCalledWith(
+      JSON.stringify({
+        answer: "Ravn has offices in three cities.",
+        sources: [
+          {
+            resource: "ravn",
+            path: "office-locations.md",
+            lines: [1, 18],
+          },
+        ],
+        resources_queried: ["ravn"],
+        resources_skipped: [],
+      }),
+    );
 
     logSpy.mockRestore();
   });
 
   it("passes split retrieval chunks through to answer generation", async () => {
-    mockGetProvider.mockReturnValue({ name: "ollama", model: null, endpoint: null });
+    mockGetProvider.mockReturnValue({
+      name: "ollama",
+      model: null,
+      endpoint: null,
+    });
     mockListResources.mockReturnValue([
-      { id: "r1", name: "ravn", last_sync_status: "ok" },
+      {
+        id: "r1",
+        name: "ravn",
+        last_sync_status: "ok",
+        index_profile: getCurrentIndexProfile(),
+      },
     ]);
     const retrievedChunks = [
       {
@@ -256,7 +302,9 @@ describe("registerAsk", () => {
     program.option("--json");
     registerAsk(program);
 
-    await program.parseAsync(["ask", "what is in the dense file"], { from: "user" });
+    await program.parseAsync(["ask", "what is in the dense file"], {
+      from: "user",
+    });
 
     expect(mockGenerateAnswer).toHaveBeenCalledWith(
       expect.any(Array),
@@ -269,4 +317,35 @@ describe("registerAsk", () => {
 
     logSpy.mockRestore();
   });
+});
+
+describe("incompatible and partial indexes", () => {
+  it.each([null, { ...getCurrentIndexProfile(), encoding_version: "raw" }])(
+    "skips incompatible index profile %s",
+    async (index_profile) => {
+      mockGetProvider.mockReturnValue({
+        name: "ollama",
+        model: null,
+        endpoint: null,
+      });
+      mockListResources.mockReturnValue([
+        { id: "r1", name: "rex", last_sync_status: "ok", index_profile },
+      ]);
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      const exit = vi.spyOn(process, "exit").mockImplementation((): never => {
+        throw new Error("exit");
+      });
+      const program = new Command();
+      program.option("--json");
+      registerAsk(program);
+      await expect(
+        program.parseAsync(["--json", "ask", "q"], { from: "user" }),
+      ).rejects.toThrow("exit");
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining("incompatible index"),
+      );
+      log.mockRestore();
+      exit.mockRestore();
+    },
+  );
 });

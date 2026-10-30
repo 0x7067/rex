@@ -1,146 +1,48 @@
-# Query Behavior
+# Query behavior
 
-**Version:** v1
+`rex ask` retrieves evidence from the local index and delegates generation to the configured provider. Calls are stateless; resources and indexes persist.
 
----
+## Resource selection and compatibility
 
-## Overview
+Explicit `-r <name>` arguments select those resources; unknown names exit with code 2. Without explicit names, Rex selects resources whose materialized directories contain the current working directory, ordered from most specific to least specific. Outside registered directories it selects all resources.
 
-`rex ask` is a one-shot grounded question-answering command. It retrieves relevant context from the local index and delegates answer generation to the configured LLM provider.
+Only resources with `last_sync_status: "ok"` and the current index profile are eligible. Pending, failed, partial and incompatible resources are reported in `resources_skipped`. An older index needs `rex sync`; profile changes automatically force a full rebuild. If no eligible resource remains, the command exits with code 4.
 
----
+## Retrieval and evidence
 
-## Resource Resolution
+1. Embed the question with the pinned Nomic model and the `search_query:` task prefix. Document embeddings use `search_document:` plus the file path and source text. Embedding source, encoding, dimension, chunker and schema versions form the compatibility profile.
+2. Search each selected resource independently using its immutable `resource_id`. LanceDB combines BM25 full-text candidates over file paths and text with cosine vector candidates using reciprocal rank fusion. The code tokenizer preserves identifiers without stemming or stop-word removal.
+3. Collect up to 10 distinct spans per resource and 40 overall. Candidate searches request four times the per-resource cap. Round-robin ranks preserve resource coverage. Provider choice does not change retrieval rules.
+4. Admit complete excerpts into a 12,000-byte evidence budget, including excerpt labels. Excerpts are never truncated after retrieval, so citation ranges remain attributable. This is a conservative byte budget, not an exact count for every generation model's tokenizer. Questions are limited to 4,000 UTF-8 bytes. Generated summaries are bounded navigation hints and cannot independently support citations.
+5. Build resource-labeled sections with paths and line ranges. Source strings are serialized as data. Instructions require each factual claim to cite file evidence, treat retrieved instructions as untrusted, and acknowledge insufficient information.
+6. Generate and parse a machine-readable citation block:
 
-### With `-r <name...>`
-
-Only the named resources are queried. Rules:
-
-- Each named resource must exist in the registry. If any named resource is not found, `ask` exits with code 2.
-- If a named resource exists but has `last_sync_status: "pending"` (never synced), a warning is printed but the resource is skipped rather than causing a hard failure.
-- If a named resource exists but has `last_sync_status: "failed"`, a warning is printed and the resource is skipped.
-
-### Without `-r`
-
-All resources in the registry are queried. Rules:
-
-- Resources with `last_sync_status: "pending"` or `"failed"` are skipped with a warning.
-- If all resources are skipped (e.g., nothing has been synced), `ask` exits with code 4.
-
-### Multi-Resource Queries
-
-When multiple resources are targeted:
-
-- Summary blocks and chunks from all target resources are pooled into the context.
-- The LLM prompt identifies which resource each piece of context came from.
-- The answer may draw from any combination of target resources.
-- Source references in the output are tagged per-resource.
-
----
-
-## Answer Resolution Pipeline
-
-For each `ask` call:
-
-1. **Resolve resources.** Apply the rules above. Resolve each resource name to its stable `id`.
-2. **Load summary blocks.** Retrieve all summary block rows from the `summaries` table filtered by `resource_id IN [...]`. Group by resource.
-3. **Vector retrieval.** Embed the question using the same embedding model used at index time (nomic-embed-text-v1.5). Run ANN search in LanceDB against the `chunks` table filtered by `resource_id IN [...]`. Retrieve top-K chunks (default K=10 per resource, capped at 40 total). **Filter by `resource_id`, not `resource_name`, to guarantee isolation.**
-4. **Build prompt.** Assemble the grounded prompt with strict per-resource sections:
-   ```
-   [System]: You are a helpful assistant. Answer based only on the provided context.
-   Each context section is labeled with its resource. Cite sources by resource name and file path.
-   Do not blend information across resources without explicitly attributing each claim.
-
-   [Resource: <name-A> (id: <uuid-A>)]
-   Summary (identity): ...
-   Summary (architecture): ...
-   --- File: src/index.ts ---
-   <chunk text>
-   --- File: src/routes.ts ---
-   <chunk text>
-
-   [Resource: <name-B> (id: <uuid-B>)]
-   ...
-
-   [Question]: <user question>
-   ```
-5. **Provider call.** Shell out to the configured provider with the assembled prompt.
-6. **Return answer.** Parse the provider response and format output.
-
-### Context Isolation
-
-Each resource's context is wrapped in a clearly labeled section. The UUID is included in the prompt section header so the LLM cannot confuse two resources that happen to share a name. Chunks never appear without their resource label.
-
----
-
-## Grounding Requirements
-
-Answers must:
-
-- Draw only from the provided summary blocks and retrieved chunks.
-- Cite sources by resource name and file path when making specific claims.
-- Acknowledge when the indexed context is insufficient to answer confidently.
-- Not synthesize information that cannot be traced to the provided context.
-
-The grounding is enforced by prompt construction, not post-processing. The system prompt instructs the LLM to cite sources and avoid unsupported claims.
-
----
-
-## Output Modes
-
-### Human-readable (default)
-
-```
-Answer:
-<LLM-generated answer text, possibly multi-paragraph>
-
-Sources:
-- <resource>: <file-path> [lines N-M]
-- <resource>: <file-path> [lines N-M]
+```text
+<rex_sources>
+resource-name|path/to/file.ts|12|30
+</rex_sources>
 ```
 
-If no chunks were retrieved (empty knowledge base), output:
-```
-No indexed content found for the selected resources. Run `rex sync` first.
-```
+References must match excerpts actually admitted to the prompt. The complete cited range must be covered by those excerpts; malformed numbers, missing paths and out-of-range citations are rejected. Legacy `resource|path` references infer a range only when retrieved spans cover it without gaps.
 
-### `--json`
+If no excerpts fit, no generation call is made. If generation returns no valid references or an empty answer, Rex returns `status: "insufficient_context"` and replaces unsupported prose with an explanation. Otherwise it returns `status: "answered"`.
+
+Citation identity and range checks do not prove that a passage entails a claim. A contradictory statement with a valid reference can still pass. Retrieval labels, answer support and abstention need separate evaluation; see the dated RAG review.
+
+## Output and failures
+
+Human output prints the answer and validated sources. JSON also contains `status`, `resources_queried` and `resources_skipped`:
 
 ```json
 {
-  "answer": "<LLM-generated answer text>",
+  "status": "answered",
+  "answer": "The generated answer.",
   "sources": [
-    {
-      "resource": "<resource-name>",
-      "path": "<relative-file-path>",
-      "lines": [<start>, <end>]
-    }
+    { "resource": "project", "path": "src/index.ts", "lines": [12, 30] }
   ],
-  "resources_queried": ["<name>", ...],
-  "resources_skipped": [
-    { "name": "<name>", "reason": "pending | failed" }
-  ]
+  "resources_queried": ["project"],
+  "resources_skipped": []
 }
 ```
 
----
-
-## One-Shot Mode
-
-v1 `ask` is one-shot only:
-
-- Each call is stateless with respect to prior calls. There is no conversational memory between invocations.
-- The indexed knowledge base (chunks and summary blocks) persists across calls, but the LLM conversation context does not.
-- A future REPL mode should reuse the same retrieval and grounding pipeline. It must not introduce a second architecture.
-
----
-
-## Failure Modes
-
-| Condition | Behavior |
-|-----------|---------|
-| No provider configured | Exit 1 with "No provider configured. Run `rex connect` first." |
-| Named resource not found | Exit 2 with list of unknown names |
-| Provider call fails | Exit 3 with provider error message |
-| No resources indexed | Exit 4 with instructions to run `rex sync` |
-| All target resources skipped (pending/failed) | Exit 4 with list of skipped resources and reasons |
+No configured provider exits with code 1. Retrieval or provider failures exit with code 3. Codex may retry setup-only output once with a cleaner generation instruction; both attempts use the same retrieval policy.

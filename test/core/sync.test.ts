@@ -1,212 +1,134 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createResource } from "../../src/core/resource.js";
-
-// --- module mocks ---
-vi.mock("../../src/adapters/local.js", () => ({
-  localAdapter: { type: "local", materialize: vi.fn() },
-}));
-vi.mock("../../src/adapters/git.js", () => ({
-  gitAdapter: { type: "git", materialize: vi.fn() },
-}));
-vi.mock("../../src/adapters/package.js", () => ({
-  packageAdapter: { type: "package", materialize: vi.fn() },
-}));
-
-const mockEnumerate = vi.fn();
-const mockFingerprint = vi.fn();
-vi.mock("../../src/adapters/shared.js", () => ({
-  enumerate: (...args: unknown[]) => mockEnumerate(...args),
-  fingerprint: (...args: unknown[]) => mockFingerprint(...args),
-}));
-
-const mockChunkFile = vi.fn();
-vi.mock("../../src/indexing/chunker.js", () => ({
-  chunkFile: (...args: unknown[]) => mockChunkFile(...args),
-}));
-
-const mockEmbed = vi.fn();
+import { addResource, getResourceById } from "../../src/core/registry.js";
+const mocks = vi.hoisted(() => ({ embed: vi.fn(), call: vi.fn() }));
 vi.mock("../../src/indexing/embedder.js", () => ({
-  embed: (...args: unknown[]) => mockEmbed(...args),
+  embed: mocks.embed,
+  countTokens: async (text: string) => Math.ceil(text.length / 4),
+  getEmbedContextSize: () => 4096,
   getEmbedModel: () => "nomic-ai/nomic-embed-text-v1.5",
-  EMBED_BATCH_SIZE: 128,
+  getEmbeddingSource: () => "fixture.gguf",
 }));
-
-const mockGetChunkFingerprints = vi.fn();
-const mockDeleteChunks = vi.fn();
-const mockDeleteChunksForFile = vi.fn();
-const mockDeleteSummaries = vi.fn();
-const mockWriteChunks = vi.fn();
-const mockCountChunks = vi.fn();
-vi.mock("../../src/indexing/store.js", () => ({
-  getChunkFingerprints: (...args: unknown[]) => mockGetChunkFingerprints(...args),
-  deleteChunks: (...args: unknown[]) => mockDeleteChunks(...args),
-  deleteChunksForFile: (...args: unknown[]) => mockDeleteChunksForFile(...args),
-  deleteSummaries: (...args: unknown[]) => mockDeleteSummaries(...args),
-  writeChunks: (...args: unknown[]) => mockWriteChunks(...args),
-  countChunks: (...args: unknown[]) => mockCountChunks(...args),
+vi.mock("../../src/provider/interface.js", () => ({
+  getProvider: () => ({ call: mocks.call }),
 }));
-
-const mockGenerateSummaries = vi.fn();
-vi.mock("../../src/query/answerer.js", () => ({
-  generateSummaries: (...args: unknown[]) => mockGenerateSummaries(...args),
-}));
-
-const mockIndexResourceFiles = vi.fn();
-vi.mock("../../src/indexing/pipeline.js", () => ({
-  indexResourceFiles: (...args: unknown[]) => mockIndexResourceFiles(...args),
-}));
-
-const mockUpdateResource = vi.fn();
-vi.mock("../../src/core/registry.js", () => ({
-  updateResource: (...args: unknown[]) => mockUpdateResource(...args),
-}));
-
-vi.mock("../../src/core/config.js", () => ({
-  snapshotsDir: () => "/tmp/snapshots",
-}));
-
 const { syncResource } = await import("../../src/core/sync.js");
-
-const localResource = createResource({
-  name: "test-repo",
-  type: "local",
-  source: "/tmp/test",
-  normalized_source: "/tmp/test",
-  notes: "",
-  include_rules: [],
-  exclude_rules: [],
-  snapshot_metadata: { type: "local", absolute_path: "/tmp/test" },
-});
-
-const providerConfig = { name: "ollama" as const, model: null, endpoint: null };
-
-async function* makeEntries(paths: string[]) {
-  for (const p of paths) {
-    yield { relativePath: p, absolutePath: `/tmp/test/${p}`, content: "data" };
-  }
-}
-
-beforeEach(() => {
+const { getResourceChunks, getSummaries, resetDb } =
+  await import("../../src/indexing/store.js");
+const provider = {
+  name: "ollama",
+  model: null,
+  endpoint: null,
+} satisfies Parameters<typeof syncResource>[1];
+let root: string;
+beforeEach(async () => {
+  await resetDb();
+  root = fs.mkdtempSync(
+    path.join(
+      fs.existsSync("/dev/shm") ? "/dev/shm" : os.tmpdir(),
+      "rex-sync-",
+    ),
+  );
+  process.env["REX_HOME"] = path.join(root, "state");
   vi.clearAllMocks();
-  mockGetChunkFingerprints.mockResolvedValue(new Map());
-  mockDeleteChunks.mockResolvedValue(undefined);
-  mockDeleteChunksForFile.mockResolvedValue(undefined);
-  mockDeleteSummaries.mockResolvedValue(undefined);
-  mockWriteChunks.mockResolvedValue(undefined);
-  mockCountChunks.mockResolvedValue(5);
-  mockGenerateSummaries.mockResolvedValue(undefined);
-  mockIndexResourceFiles.mockResolvedValue({
-    filesScanned: 1,
-    filesChanged: 1,
-    chunksUpdated: 1,
-    changedChunkTexts: ["chunk text"],
-    forcedFullSync: false,
-    indexProfile: {
-      embed_model: "nomic-ai/nomic-embed-text-v1.5",
-      chunker_version: "boundary-v2",
-      index_schema_version: "2",
-    },
-  });
-  mockUpdateResource.mockReturnValue(undefined);
+  mocks.call.mockResolvedValue("Generated overview");
+  mocks.embed.mockImplementation(async (texts: string[]) =>
+    texts.map(() => {
+      const vector = new Float32Array(768);
+      vector[0] = 1;
+      return vector;
+    }),
+  );
 });
-
-describe("syncResource", () => {
-  it("returns failed status when materialize throws", async () => {
-    const { localAdapter } = await import("../../src/adapters/local.js");
-    (localAdapter.materialize as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("network error"),
-    );
-
-    const result = await syncResource(localResource, providerConfig);
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("network error");
-    expect(mockUpdateResource).toHaveBeenCalledWith(
-      expect.objectContaining({ last_sync_status: "failed" }),
-    );
+afterEach(async () => {
+  await resetDb();
+  fs.rmSync(root, { recursive: true, force: true });
+  delete process.env["REX_HOME"];
+});
+function resource() {
+  const r = createResource({
+    name: "fixture",
+    type: "local",
+    source: root,
+    normalized_source: root,
+    notes: "",
+    include_rules: ["*.ts"],
+    exclude_rules: [],
+    snapshot_metadata: { type: "local", absolute_path: root },
   });
-
-  it("returns partial status when embed throws mid-sync", async () => {
-    const { localAdapter } = await import("../../src/adapters/local.js");
-    (localAdapter.materialize as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    mockIndexResourceFiles.mockRejectedValue(new Error("Ollama is not running"));
-
-    const result = await syncResource(localResource, providerConfig);
-    expect(result.status).toBe("partial");
-    expect(result.error).toContain("Ollama is not running");
-    expect(mockUpdateResource).toHaveBeenCalledWith(
-      expect.objectContaining({ last_sync_status: "partial", chunk_count: 5 }),
+  addResource(r);
+  return r;
+}
+describe("resource sync consistency", () => {
+  it("summarizes unchanged and changed content together after incremental sync", async () => {
+    fs.writeFileSync(path.join(root, "a.ts"), "UNCHANGED_A");
+    fs.writeFileSync(path.join(root, "b.ts"), "OLD_B");
+    const r = resource();
+    await syncResource(r, provider);
+    mocks.call.mockClear();
+    fs.writeFileSync(path.join(root, "b.ts"), "NEW_B");
+    expect((await syncResource(getResourceById(r.id), provider)).status).toBe(
+      "ok",
     );
+    const prompt = mocks.call.mock.calls[0]?.[0];
+    expect(prompt).toContain("UNCHANGED_A");
+    expect(prompt).toContain("NEW_B");
+    expect(prompt).not.toContain("OLD_B");
+    expect(await getSummaries([r.id])).toHaveLength(3);
   });
-
-  it("returns ok status and calls generateSummaries when files change", async () => {
-    const { localAdapter } = await import("../../src/adapters/local.js");
-    (localAdapter.materialize as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-
-    const result = await syncResource(localResource, providerConfig);
-    expect(result.status).toBe("ok");
-    expect(result.filesChanged).toBe(1);
-    expect(mockGenerateSummaries).toHaveBeenCalledOnce();
-    expect(mockUpdateResource).toHaveBeenCalledWith(
-      expect.objectContaining({ last_sync_status: "ok" }),
-    );
+  it("regenerates summaries after a deletion-only change", async () => {
+    fs.writeFileSync(path.join(root, "a.ts"), "KEEP_A");
+    fs.writeFileSync(path.join(root, "b.ts"), "DELETE_B");
+    const r = resource();
+    await syncResource(r, provider);
+    fs.unlinkSync(path.join(root, "b.ts"));
+    mocks.call.mockClear();
+    await syncResource(getResourceById(r.id), provider);
+    expect(mocks.call).toHaveBeenCalledTimes(3);
+    expect(mocks.call.mock.calls[0]?.[0]).toContain("KEEP_A");
+    expect(mocks.call.mock.calls[0]?.[0]).not.toContain("DELETE_B");
   });
-
-  it("returns ok with no changes when fingerprints match", async () => {
-    const { localAdapter } = await import("../../src/adapters/local.js");
-    (localAdapter.materialize as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    mockIndexResourceFiles.mockResolvedValue({
-      filesScanned: 1,
-      filesChanged: 0,
-      chunksUpdated: 0,
-      changedChunkTexts: [],
-      forcedFullSync: false,
-      indexProfile: {
-        embed_model: "nomic-ai/nomic-embed-text-v1.5",
-        chunker_version: "boundary-v2",
-        index_schema_version: "2",
-      },
-    });
-
-    const result = await syncResource(localResource, providerConfig);
-    expect(result.status).toBe("ok");
-    expect(result.filesChanged).toBe(0);
-    expect(mockGenerateSummaries).not.toHaveBeenCalled();
+  it("records summary failures as partial and repairs summaries on the next unchanged sync", async () => {
+    fs.writeFileSync(path.join(root, "a.ts"), "content");
+    const r = resource();
+    mocks.call.mockRejectedValueOnce(new Error("fixture provider unavailable"));
+    expect((await syncResource(r, provider)).status).toBe("partial");
+    expect(getResourceById(r.id).last_sync_status).toBe("partial");
+    expect(getResourceById(r.id).last_sync_at).toBeNull();
+    expect((await syncResource(getResourceById(r.id), provider)).status).toBe(
+      "ok",
+    );
+    expect(await getSummaries([r.id])).toHaveLength(3);
   });
-
-  it("forces a full reindex when the stored index profile is missing", async () => {
-    const { localAdapter } = await import("../../src/adapters/local.js");
-    (localAdapter.materialize as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    const oldResource = { ...localResource, index_profile: null };
-    mockIndexResourceFiles.mockResolvedValue({
-      filesScanned: 1,
-      filesChanged: 1,
-      chunksUpdated: 1,
-      changedChunkTexts: ["chunk text"],
-      forcedFullSync: true,
-      indexProfile: {
-        embed_model: "nomic-ai/nomic-embed-text-v1.5",
-        chunker_version: "boundary-v2",
-        index_schema_version: "2",
-      },
-    });
-
-    const result = await syncResource(oldResource, providerConfig);
-
-    expect(result.status).toBe("ok");
-    expect(mockIndexResourceFiles).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resource: oldResource,
-        fullSync: false,
-      }),
-    );
-    expect(mockUpdateResource).toHaveBeenCalledWith(
-      expect.objectContaining({
-        index_profile: {
-          embed_model: "nomic-ai/nomic-embed-text-v1.5",
-          chunker_version: "boundary-v2",
-          index_schema_version: "2",
-        },
-      }),
-    );
+  it("preserves the last successful rows and timestamp when embedding fails", async () => {
+    fs.writeFileSync(path.join(root, "a.ts"), "before");
+    const r = resource();
+    await syncResource(r, provider);
+    const saved = getResourceById(r.id);
+    fs.writeFileSync(path.join(root, "a.ts"), "after");
+    mocks.embed.mockRejectedValueOnce(new Error("embedding unavailable"));
+    expect((await syncResource(saved, provider)).status).toBe("partial");
+    expect((await getResourceChunks(r.id))[0]?.text).toBe("before");
+    expect(getResourceById(r.id).last_sync_at).toBe(saved.last_sync_at);
+  });
+  it("does not regenerate summaries for an unchanged healthy resource", async () => {
+    fs.writeFileSync(path.join(root, "a.ts"), "content");
+    const r = resource();
+    await syncResource(r, provider);
+    mocks.call.mockClear();
+    expect(
+      (await syncResource(getResourceById(r.id), provider)).filesChanged,
+    ).toBe(0);
+    expect(mocks.call).not.toHaveBeenCalled();
+  });
+  it("returns a failed status when its local source disappears", async () => {
+    const r = resource();
+    const source = path.join(root, "gone");
+    const missing = { ...r, normalized_source: source };
+    expect((await syncResource(missing, provider)).status).toBe("failed");
+    expect(getResourceById(r.id).last_sync_status).toBe("failed");
   });
 });

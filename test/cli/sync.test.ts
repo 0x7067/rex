@@ -65,7 +65,7 @@ describe("registerSync", () => {
       expect.any(Function),
     );
     expect(warnSpy).toHaveBeenCalledWith(
-      'Skipping "locked": add is still running.',
+      'Skipping "locked": another write is still running.',
     );
     expect(logSpy).toHaveBeenCalledWith(
       JSON.stringify([{

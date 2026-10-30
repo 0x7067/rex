@@ -30,22 +30,30 @@ describe("CodexProvider", () => {
     await provider.call("Answer this.");
 
     expect(mockExeca).toHaveBeenCalledOnce();
-    const [binary, args, options] = mockExeca.mock.calls[0] as [string, string[], Record<string, unknown>];
+    const [binary, args, options] = mockExeca.mock.calls[0] as [
+      string,
+      string[],
+      Record<string, unknown>,
+    ];
     expect(binary).toBe("codex");
-    expect(args).toEqual(expect.arrayContaining([
-      "exec",
-      "--json",
-      "--skip-git-repo-check",
-      "--ephemeral",
-      "--sandbox",
-      "read-only",
-      "-C",
-    ]));
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--sandbox",
+        "read-only",
+        "-C",
+      ]),
+    );
     expect(args).not.toContain("--full-auto");
-    expect(options).toEqual(expect.objectContaining({
-      input: expect.stringContaining("Answer this."),
-      timeout: 90_000,
-    }));
+    expect(options).toEqual(
+      expect.objectContaining({
+        input: expect.stringContaining("Answer this."),
+        timeout: 90_000,
+      }),
+    );
   });
 
   it("returns only the cleaned final answer instead of intermediate agent chatter", async () => {
@@ -98,5 +106,18 @@ describe("CodexProvider", () => {
       name: "RetryableProviderError",
       providerName: "codex",
     });
+  });
+});
+
+describe("Codex event contract", () => {
+  it("does not treat arbitrary JSON events as an answer", async () => {
+    mockExeca.mockResolvedValueOnce({
+      stdout: JSON.stringify({ type: "error", message: "fixture failure" }),
+    });
+    await expect(
+      new CodexProvider({ name: "codex", model: null, endpoint: null }).call(
+        "q",
+      ),
+    ).rejects.toThrow("no final agent message");
   });
 });

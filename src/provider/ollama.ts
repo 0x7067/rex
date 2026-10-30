@@ -1,10 +1,6 @@
 import type { ProviderConfig } from "../core/resource.js";
 import { ProviderError, type ProviderCallOptions } from "./interface.js";
-
-interface OllamaResponse {
-  response: string;
-  done: boolean;
-}
+import { z } from "zod";
 
 export class OllamaProvider {
   readonly name = "ollama";
@@ -23,7 +19,13 @@ export class OllamaProvider {
       response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: this.model, prompt, stream: false }),
+        body: JSON.stringify({
+          model: this.model,
+          prompt,
+          stream: false,
+          options: { num_ctx: 8192, num_predict: 1024 },
+        }),
+        signal: AbortSignal.timeout(120_000),
       });
     } catch (err) {
       throw new ProviderError(
@@ -39,7 +41,11 @@ export class OllamaProvider {
       );
     }
 
-    const data = (await response.json()) as OllamaResponse;
-    return data.response;
+    const data = z
+      .object({ response: z.string().min(1), done: z.boolean() })
+      .safeParse(await response.json());
+    if (!data.success)
+      throw new ProviderError("Ollama returned a malformed response", "ollama");
+    return data.data.response;
   }
 }
