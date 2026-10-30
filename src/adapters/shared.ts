@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { minimatch } from "minimatch";
+import ignore, { type Ignore } from "ignore";
 import type { FileEntry } from "./adapter.js";
 
 export const DEFAULT_EXCLUDES = [
@@ -22,16 +23,55 @@ export const DEFAULT_EXCLUDES = [
   "**/*.map",
   "**/*.bundle.js",
   "**/*.bundle.mjs",
+  "**/.env",
+  "**/.env.*",
+  "**/*.pem",
+  "**/*.key",
+  "**/id_rsa",
+  "**/id_ed25519",
+  "**/.ssh/**",
+  "**/.aws/**",
+  "**/.npmrc",
 ];
 
 const BINARY_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg",
-  ".woff", ".woff2", ".ttf", ".eot", ".otf",
-  ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-  ".exe", ".dll", ".so", ".dylib", ".bin",
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-  ".mp3", ".mp4", ".wav", ".avi", ".mov",
-  ".db", ".sqlite",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".ico",
+  ".svg",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".eot",
+  ".otf",
+  ".zip",
+  ".tar",
+  ".gz",
+  ".bz2",
+  ".7z",
+  ".rar",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".bin",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".mp3",
+  ".mp4",
+  ".wav",
+  ".avi",
+  ".mov",
+  ".db",
+  ".sqlite",
 ]);
 
 function isBinary(filePath: string): boolean {
@@ -49,39 +89,59 @@ export async function* enumerate(
   includeRules: string[],
   excludeRules: string[],
 ): AsyncGenerator<FileEntry> {
-  const effectiveExcludes = [
-    ...DEFAULT_EXCLUDES,
-    ...excludeRules,
-  ];
+  const effectiveExcludes = [...DEFAULT_EXCLUDES, ...excludeRules];
 
-  const walk = async function* (currentDir: string): AsyncGenerator<FileEntry> {
+  const walk = async function* (
+    currentDir: string,
+    parents: Array<{ dir: string; matcher: Ignore }>,
+  ): AsyncGenerator<FileEntry> {
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(currentDir, { withFileTypes: true });
-    } catch {
-      return;
+    } catch (error) {
+      throw new Error(`Cannot enumerate ${currentDir}`, { cause: error });
     }
+    const rules = [...parents];
+    const ignorePath = path.join(currentDir, ".gitignore");
+    if (fs.existsSync(ignorePath))
+      rules.push({
+        dir: currentDir,
+        matcher: ignore().add(fs.readFileSync(ignorePath, "utf-8")),
+      });
 
     for (const entry of entries) {
       const absolutePath = path.join(currentDir, entry.name);
       const relativePath = path.relative(dir, absolutePath);
 
       if (matchesAny(relativePath, effectiveExcludes)) continue;
+      let ignored = false;
+      for (const rule of rules) {
+        const match = rule.matcher.test(
+          path.relative(rule.dir, absolutePath).split(path.sep).join("/") +
+            (entry.isDirectory() ? "/" : ""),
+        );
+        if (match.ignored) ignored = true;
+        if (match.unignored) ignored = false;
+      }
+      if (ignored) continue;
 
       if (entry.isDirectory()) {
-        yield* walk(absolutePath);
+        yield* walk(absolutePath, rules);
       } else if (entry.isFile()) {
         if (isBinary(entry.name)) continue;
 
-        if (includeRules.length > 0 && !matchesAny(relativePath, includeRules)) {
+        if (
+          includeRules.length > 0 &&
+          !matchesAny(relativePath, includeRules)
+        ) {
           continue;
         }
 
         let sizeBytes = 0;
         try {
           sizeBytes = fs.statSync(absolutePath).size;
-        } catch {
-          continue;
+        } catch (error) {
+          throw new Error(`Cannot stat ${relativePath}`, { cause: error });
         }
 
         yield { absolutePath, relativePath, sizeBytes };
@@ -89,7 +149,7 @@ export async function* enumerate(
     }
   };
 
-  yield* walk(dir);
+  yield* walk(dir, []);
 }
 
 export async function fingerprint(entry: FileEntry): Promise<string> {

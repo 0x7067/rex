@@ -3,15 +3,13 @@ import { gitAdapter } from "../adapters/git.js";
 import { packageAdapter } from "../adapters/package.js";
 import type { ResourceAdapter } from "../adapters/adapter.js";
 import { indexResourceFiles } from "../indexing/pipeline.js";
-import {
-  countChunks,
-  deleteSummaries,
-} from "../indexing/store.js";
+import { countChunks, deleteSummaries } from "../indexing/store.js";
 import { generateSummaries } from "../query/answerer.js";
 import type { ProviderConfig, Resource } from "./resource.js";
 import { updateResource } from "./registry.js";
 import { snapshotsDir } from "./config.js";
 import { getMaterializedDir } from "../query/resolve-target.js";
+import { acquireResourceAddLock, releaseResourceAddLock } from "./locks.js";
 
 const ADAPTERS: ResourceAdapter[] = [localAdapter, gitAdapter, packageAdapter];
 
@@ -35,15 +33,37 @@ export async function syncResource(
   fullSync = false,
   onProgress?: (msg: string) => void,
 ): Promise<SyncResult> {
+  if (!acquireResourceAddLock(resource.id))
+    return {
+      name: resource.name,
+      filesChanged: 0,
+      chunksUpdated: 0,
+      status: "partial",
+      error: "Another write is already running for this resource",
+    };
+  try {
+    return await performSync(resource, providerConfig, fullSync, onProgress);
+  } finally {
+    releaseResourceAddLock(resource.id);
+  }
+}
+
+async function performSync(
+  resource: Resource,
+  providerConfig: ProviderConfig,
+  fullSync = false,
+  onProgress?: (msg: string) => void,
+): Promise<SyncResult> {
   const adapter = getAdapter(resource.type);
 
   // Re-materialize to pick up changes
   onProgress?.(`Materializing ${resource.name}...`);
   try {
-    await adapter.materialize(
+    const snapshotMetadata = await adapter.materialize(
       resource.normalized_source,
       snapshotsDir(),
     );
+    resource = { ...resource, snapshot_metadata: snapshotMetadata };
   } catch (err) {
     const updated = {
       ...resource,
@@ -61,9 +81,6 @@ export async function syncResource(
 
   const materializedDir = getMaterializedDir(resource);
 
-  if (fullSync) {
-    await deleteSummaries(resource.id);
-  }
   let indexResult;
   try {
     indexResult = await indexResourceFiles({
@@ -74,13 +91,29 @@ export async function syncResource(
       fullSync,
       onProgress,
     });
+    if (
+      indexResult.filesChanged > 0 ||
+      indexResult.forcedFullSync ||
+      resource.last_sync_status !== "ok"
+    ) {
+      if (indexResult.allChunkTexts.length > 0) {
+        await generateSummaries(
+          resource,
+          indexResult.allChunkTexts,
+          providerConfig,
+          onProgress,
+        );
+      } else {
+        await deleteSummaries(resource.id);
+      }
+    }
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const currentChunkCount = await countChunks(resource.id);
     const partial: Resource = {
       ...resource,
       last_sync_status: "partial",
-      last_sync_at: new Date().toISOString(),
+      last_sync_at: resource.last_sync_at,
       chunk_count: currentChunkCount,
       index_profile: resource.index_profile,
     };
@@ -95,15 +128,6 @@ export async function syncResource(
   }
 
   const { filesChanged, chunksUpdated } = indexResult;
-  const allChunkTexts = indexResult.changedChunkTexts;
-
-  // Regenerate summaries if anything changed
-  if (filesChanged > 0 || indexResult.forcedFullSync) {
-    await deleteSummaries(resource.id);
-    if (allChunkTexts.length > 0) {
-      await generateSummaries(resource, allChunkTexts, providerConfig, onProgress);
-    }
-  }
 
   const chunkCount = await countChunks(resource.id);
 
@@ -123,4 +147,3 @@ export async function syncResource(
     status: "ok",
   };
 }
-

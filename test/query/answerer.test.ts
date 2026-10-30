@@ -14,12 +14,8 @@ vi.mock("../../src/indexing/store.js", () => ({
   writeSummaries: mockWriteSummaries,
 }));
 
-const {
-  buildPrompt,
-  buildSummaryPrompt,
-  generateAnswer,
-  generateSummaries,
-} = await import("../../src/query/answerer.js");
+const { buildPrompt, buildSummaryPrompt, generateAnswer, generateSummaries } =
+  await import("../../src/query/answerer.js");
 
 const resourceA = createResource({
   name: "project-a",
@@ -43,7 +39,12 @@ const resourceB = createResource({
   snapshot_metadata: { type: "local", absolute_path: "/tmp/b" },
 });
 
-function makeSummary(resourceId: string, resourceName: string, blockType: string, content: string): SummaryRow {
+function makeSummary(
+  resourceId: string,
+  resourceName: string,
+  blockType: string,
+  content: string,
+): SummaryRow {
   return {
     id: crypto.randomUUID(),
     resource_id: resourceId,
@@ -55,7 +56,12 @@ function makeSummary(resourceId: string, resourceName: string, blockType: string
   };
 }
 
-function makeChunk(resourceId: string, resourceName: string, filePath: string, text: string): RetrievedChunk {
+function makeChunk(
+  resourceId: string,
+  resourceName: string,
+  filePath: string,
+  text: string,
+): RetrievedChunk {
   return {
     resource_id: resourceId,
     resource_name: resourceName,
@@ -86,8 +92,18 @@ describe("buildPrompt", () => {
   });
 
   it("includes summaries before chunks in each resource section", () => {
-    const summary = makeSummary(resourceA.id, "project-a", "identity", "A TypeScript CLI tool");
-    const chunk = makeChunk(resourceA.id, "project-a", "src/index.ts", "const main = () => {}");
+    const summary = makeSummary(
+      resourceA.id,
+      "project-a",
+      "identity",
+      "A TypeScript CLI tool",
+    );
+    const chunk = makeChunk(
+      resourceA.id,
+      "project-a",
+      "src/index.ts",
+      "const main = () => {}",
+    );
     const prompt = buildPrompt([resourceA], [summary], [chunk], "q");
 
     const summaryPos = prompt.indexOf("A TypeScript CLI tool");
@@ -96,8 +112,18 @@ describe("buildPrompt", () => {
   });
 
   it("keeps resource A and B context separate", () => {
-    const summaryA = makeSummary(resourceA.id, "project-a", "identity", "This is project A");
-    const summaryB = makeSummary(resourceB.id, "project-b", "identity", "This is project B");
+    const summaryA = makeSummary(
+      resourceA.id,
+      "project-a",
+      "identity",
+      "This is project A",
+    );
+    const summaryB = makeSummary(
+      resourceB.id,
+      "project-b",
+      "identity",
+      "This is project B",
+    );
     const chunkA = makeChunk(resourceA.id, "project-a", "a.ts", "code from A");
     const chunkB = makeChunk(resourceB.id, "project-b", "b.ts", "code from B");
 
@@ -115,7 +141,12 @@ describe("buildPrompt", () => {
   });
 
   it("labels chunks with file path", () => {
-    const chunk = makeChunk(resourceA.id, "project-a", "src/index.ts", "export default {}");
+    const chunk = makeChunk(
+      resourceA.id,
+      "project-a",
+      "src/index.ts",
+      "export default {}",
+    );
     const prompt = buildPrompt([resourceA], [], [chunk], "q");
     expect(prompt).toContain("--- File: src/index.ts");
   });
@@ -143,7 +174,11 @@ describe("buildSummaryPrompt", () => {
 });
 
 describe("generateSummaries", () => {
-  const providerConfig = { name: "ollama" as const, model: null, endpoint: null };
+  const providerConfig = {
+    name: "ollama" as const,
+    model: null,
+    endpoint: null,
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -165,14 +200,25 @@ describe("generateSummaries", () => {
 
   it("includes correct resource_id and block_types in written rows", async () => {
     await generateSummaries(resourceA, ["chunk text"], providerConfig);
-    const [rows] = mockWriteSummaries.mock.calls[0] as [Array<{ resource_id: string; block_type: string }>];
-    expect(rows.map((r) => r.block_type).sort()).toEqual(["architecture", "conventions", "identity"]);
+    const [rows] = mockWriteSummaries.mock.calls[0] as [
+      Array<{ resource_id: string; block_type: string }>,
+    ];
+    expect(rows.map((r) => r.block_type).sort()).toEqual([
+      "architecture",
+      "conventions",
+      "identity",
+    ]);
     expect(rows.every((r) => r.resource_id === resourceA.id)).toBe(true);
   });
 
   it("calls onProgress once per block type", async () => {
     const onProgress = vi.fn();
-    await generateSummaries(resourceA, ["chunk text"], providerConfig, onProgress);
+    await generateSummaries(
+      resourceA,
+      ["chunk text"],
+      providerConfig,
+      onProgress,
+    );
     expect(onProgress).toHaveBeenCalledTimes(3);
   });
 
@@ -185,7 +231,11 @@ describe("generateSummaries", () => {
 });
 
 describe("generateAnswer", () => {
-  const providerConfig = { name: "ollama" as const, model: null, endpoint: null };
+  const providerConfig = {
+    name: "ollama" as const,
+    model: null,
+    endpoint: null,
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -207,7 +257,12 @@ describe("generateAnswer", () => {
       [],
       [
         makeChunk(resourceA.id, "ravn", "office-locations.md", "American Fork"),
-        makeChunk(resourceA.id, "ravn", "engineering-general.md", "Engineering handbook"),
+        makeChunk(
+          resourceA.id,
+          "ravn",
+          "engineering-general.md",
+          "Engineering handbook",
+        ),
         makeChunk(resourceA.id, "ravn", "design.md", "Design handbook"),
       ],
       "where are the offices located",
@@ -243,7 +298,12 @@ describe("generateAnswer", () => {
       [],
       [
         makeChunk(resourceA.id, "ravn", "office-locations.md", "American Fork"),
-        makeChunk(resourceA.id, "ravn", "engineering-general.md", "Engineering handbook"),
+        makeChunk(
+          resourceA.id,
+          "ravn",
+          "engineering-general.md",
+          "Engineering handbook",
+        ),
       ],
       "where are the offices located",
       providerConfig,
@@ -256,5 +316,74 @@ describe("generateAnswer", () => {
         lines: [1, 10],
       },
     ]);
+  });
+});
+
+describe("evidence requirements", () => {
+  const providerConfig = {
+    name: "ollama",
+    model: null,
+    endpoint: null,
+  } satisfies Parameters<typeof generateAnswer>[4];
+  beforeEach(() => vi.clearAllMocks());
+  it("abstains without calling a model when no file evidence was retrieved", async () => {
+    const answer = await generateAnswer(
+      [resourceA],
+      [],
+      [],
+      "unknown",
+      providerConfig,
+    );
+    expect(answer.status).toBe("insufficient_context");
+    expect(answer.sources).toEqual([]);
+    expect(mockProviderCall).not.toHaveBeenCalled();
+  });
+  it("does not return unsupported model prose when its citations are missing or invalid", async () => {
+    mockProviderCall.mockResolvedValue(
+      "This unsupported answer has no citations.",
+    );
+    const answer = await generateAnswer(
+      [resourceA],
+      [],
+      [makeChunk(resourceA.id, resourceA.name, "a.ts", "evidence")],
+      "q",
+      providerConfig,
+    );
+    expect(answer.status).toBe("insufficient_context");
+    expect(answer.answer).not.toContain("unsupported answer");
+  });
+  it("validates citations against the actual bounded prompt, excluding dropped excerpts", async () => {
+    mockProviderCall.mockResolvedValue(
+      `answer\n<rex_sources>\n${resourceA.name}|large.ts|1|10\n</rex_sources>`,
+    );
+    const chunks = [
+      makeChunk(resourceA.id, resourceA.name, "small.ts", "evidence"),
+      makeChunk(resourceA.id, resourceA.name, "large.ts", "x".repeat(30_000)),
+    ];
+    const answer = await generateAnswer(
+      [resourceA],
+      [],
+      chunks,
+      "q",
+      providerConfig,
+    );
+    expect(mockProviderCall.mock.calls[0]?.[0]).not.toContain("large.ts");
+    expect(answer.status).toBe("insufficient_context");
+  });
+  it("does not accept malformed numeric line spans", async () => {
+    mockProviderCall.mockResolvedValue(
+      `answer\n<rex_sources>\n${resourceA.name}|a.ts|1abc|10\n</rex_sources>`,
+    );
+    expect(
+      (
+        await generateAnswer(
+          [resourceA],
+          [],
+          [makeChunk(resourceA.id, resourceA.name, "a.ts", "evidence")],
+          "q",
+          providerConfig,
+        )
+      ).status,
+    ).toBe("insufficient_context");
   });
 });

@@ -28,7 +28,7 @@ The supported public CLI surface for this rollout is:
 ### Prerequisites
 
 - macOS
-- Node.js 20+
+- Node.js 22.12+
 - npm
 
 For the default path, teammates also need Claude Code installed and authenticated.
@@ -46,7 +46,7 @@ bun run preflight:macos
 
 If you are installing from npm instead, use this checklist:
 
-- `node --version` reports Node.js 20 or newer
+- `node --version` reports Node.js 22.12 or newer
 - `npm --version` succeeds
 - `REX_HOME` is either unset or points to a writable directory
 - for the default path, `claude --version` succeeds
@@ -137,3 +137,13 @@ bun run test
 
 Maintainers can publish the alpha package through the GitHub Actions release workflow described in [docs/releasing.md](docs/releasing.md).
 Draft release notes for upcoming tags live under `docs/releases/`.
+
+## RAG pipeline and upgrades
+
+Rex uses local Nomic embeddings with separate document/query prefixes and a pinned GGUF revision. Retrieval combines BM25 and vector candidates with LanceDB's reciprocal rank fusion. File excerpts keep resource IDs and line spans; empty evidence or missing valid citations produces an `insufficient_context` result.
+
+After upgrading from an older release, run `rex sync` to rebuild incompatible indexes. Node.js 22.12+ is required; Node 22 and 24 are tested in CI. Use the recent Claude Code CLI with `--safe-mode` and `--strict-mcp-config` support, or Codex CLI 0.164+ for its isolated execution flags. Claude retains your subscription login.
+
+The npm install command above applies after a maintainer publishes the package. Until then, use Contributor Setup and run `node dist/bin/rex.js`.
+
+For the research, confirmed defects, migration details and measured limitations, see [the RAG review](docs/2026-10-30-rag-review.md). `bun run test:rag` exercises the native store without loading a model. `bun run eval:rag` runs the versioned retrieval questions with the real local embedding model; first use downloads its weights. The library's `NODE_LLAMA_CPP_GPU=off` setting runs that evaluation on CPU.

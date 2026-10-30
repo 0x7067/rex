@@ -5,13 +5,21 @@ import type { FileEntry } from "../adapters/adapter.js";
 import { type Resource } from "../core/resource.js";
 import { getCachedEmbedding, setCachedEmbedding } from "./cache.js";
 import { chunkText, type Chunk } from "./chunker.js";
-import { createEmbedBatches, formatBatchProgress, formatEmbedSummary } from "./embed-options.js";
-import { countTokens, embed, getEmbedContextSize, getEmbedModel } from "./embedder.js";
-import { getCurrentIndexProfile, sameIndexProfile } from "./profile.js";
 import {
-  deleteChunks,
-  deleteChunksForFile,
-  getChunkFingerprints,
+  createEmbedBatches,
+  formatBatchProgress,
+  formatEmbedSummary,
+} from "./embed-options.js";
+import { countTokens, embed, getEmbedContextSize } from "./embedder.js";
+import {
+  embeddingCacheKey,
+  getCurrentIndexProfile,
+  sameIndexProfile,
+} from "./profile.js";
+import {
+  createChunkRows,
+  getResourceChunks,
+  replaceResourceChunks,
   writeChunks,
 } from "./store.js";
 
@@ -20,6 +28,7 @@ export interface IndexResourceFilesResult {
   filesChanged: number;
   chunksUpdated: number;
   changedChunkTexts: string[];
+  allChunkTexts: string[];
   forcedFullSync: boolean;
   indexProfile: ReturnType<typeof getCurrentIndexProfile>;
 }
@@ -45,27 +54,35 @@ export async function indexResourceFiles(opts: {
   } = opts;
 
   const indexProfile = getCurrentIndexProfile();
-  const forcedFullSync = fullSync || !sameIndexProfile(resource.index_profile, indexProfile);
-  const storedFingerprints = forcedFullSync
-    ? new Map<string, string>()
-    : await getChunkFingerprints(resource.id);
-
-  if (forcedFullSync) {
-    await deleteChunks(resource.id);
-  }
+  const forcedFullSync =
+    fullSync || !sameIndexProfile(resource.index_profile, indexProfile);
+  const previousRows = forcedFullSync
+    ? []
+    : await getResourceChunks(resource.id);
+  const storedFingerprints = new Map(
+    previousRows.map((row) => [row.file_path, row.fingerprint]),
+  );
 
   const currentPaths = new Set<string>();
   const changedChunks: Chunk[] = [];
+  const changedPaths = new Set<string>();
   let filesScanned = 0;
   let filesChanged = 0;
 
   onProgress?.("Scanning files...");
-  for await (const entry of enumerate(materializedDir, includeRules, excludeRules)) {
+  for await (const entry of enumerate(
+    materializedDir,
+    includeRules,
+    excludeRules,
+  )) {
     filesScanned++;
     currentPaths.add(entry.relativePath);
 
     const loaded = loadEntryContent(entry);
-    if (!loaded) continue;
+    if (!loaded)
+      throw new Error(
+        `Cannot read ${entry.relativePath}; previous index was preserved`,
+      );
 
     const stored = storedFingerprints.get(entry.relativePath);
     if (!forcedFullSync && stored === loaded.fingerprint) {
@@ -81,29 +98,45 @@ export async function indexResourceFiles(opts: {
     );
 
     filesChanged++;
-    if (!forcedFullSync && stored !== undefined) {
-      await deleteChunksForFile(resource.id, entry.relativePath);
-    }
-
+    changedPaths.add(entry.relativePath);
     changedChunks.push(...prepared.chunks);
   }
 
   if (!forcedFullSync) {
     for (const [filePath] of storedFingerprints) {
       if (!currentPaths.has(filePath)) {
-        await deleteChunksForFile(resource.id, filePath);
         filesChanged++;
       }
     }
   }
 
-  const chunksUpdated = await embedAndStoreChunks(changedChunks, onProgress);
+  const vectors = await embedChunkVectors(changedChunks, onProgress);
+  const allRows = [
+    ...previousRows.filter(
+      (row) =>
+        currentPaths.has(row.file_path) && !changedPaths.has(row.file_path),
+    ),
+    ...createChunkRows(changedChunks, vectors),
+  ];
+  if (forcedFullSync || filesChanged > 0)
+    await replaceResourceChunks(resource.id, allRows);
+  const chunksUpdated = changedChunks.length;
 
   return {
     filesScanned,
     filesChanged,
     chunksUpdated,
     changedChunkTexts: changedChunks.map((chunk) => chunk.text),
+    allChunkTexts: allRows
+      .sort(
+        (a, b) =>
+          a.file_path.localeCompare(b.file_path) ||
+          a.chunk_index - b.chunk_index,
+      )
+      .map(
+        (row) =>
+          `File: ${row.file_path} (lines ${row.start_line}-${row.end_line})\n${row.text}`,
+      ),
     forcedFullSync,
     indexProfile,
   };
@@ -113,15 +146,33 @@ export async function embedAndStoreChunks(
   chunks: Chunk[],
   onProgress?: (msg: string) => void,
 ): Promise<number> {
-  if (chunks.length === 0) return 0;
+  const vectors = await embedChunkVectors(chunks, onProgress);
+  await writeChunks(chunks, vectors);
+  return chunks.length;
+}
 
-  const model = getEmbedModel();
+async function embedChunkVectors(
+  chunks: Chunk[],
+  onProgress?: (msg: string) => void,
+): Promise<Float32Array[]> {
+  if (chunks.length === 0) return [];
+
+  const model = embeddingCacheKey();
   const vectors = new Array<Float32Array>(chunks.length);
-  const missing: Array<{ chunk: Chunk; index: number; text: string; estimated_tokens: number }> = [];
+  const missing: Array<{
+    chunk: Chunk;
+    index: number;
+    text: string;
+    estimated_tokens: number;
+  }> = [];
   let cacheHits = 0;
 
   for (const [index, chunk] of chunks.entries()) {
-    const cached = getCachedEmbedding(model, chunk.chunk_hash);
+    const cacheHash = crypto
+      .createHash("sha256")
+      .update(`${chunk.file_path}\n${chunk.text}`)
+      .digest("hex");
+    const cached = getCachedEmbedding(model, cacheHash);
     if (cached) {
       vectors[index] = cached;
       cacheHits++;
@@ -131,7 +182,7 @@ export async function embedAndStoreChunks(
     missing.push({
       chunk,
       index,
-      text: chunk.text,
+      text: `${chunk.file_path}\n${chunk.text}`,
       estimated_tokens: chunk.estimated_tokens,
     });
   }
@@ -155,10 +206,16 @@ export async function embedAndStoreChunks(
     for (const [offset, item] of batch.entries()) {
       const vector = embedded[offset];
       if (!vector || vector.length === 0) {
-        throw new Error(`Embedding returned an invalid vector for chunk ${item.chunk.chunk_hash}`);
+        throw new Error(
+          `Embedding returned an invalid vector for chunk ${item.chunk.chunk_hash}`,
+        );
       }
       vectors[item.index] = vector;
-      setCachedEmbedding(model, item.chunk.chunk_hash, vector);
+      const cacheHash = crypto
+        .createHash("sha256")
+        .update(item.text)
+        .digest("hex");
+      setCachedEmbedding(model, cacheHash, vector);
     }
 
     onProgress?.(
@@ -179,11 +236,7 @@ export async function embedAndStoreChunks(
     }),
   );
 
-  await writeChunks(
-    chunks,
-    vectors.map((vector) => vector ?? new Float32Array()),
-  );
-  return chunks.length;
+  return vectors;
 }
 
 export async function prepareChunksForEntry(
@@ -193,7 +246,13 @@ export async function prepareChunksForEntry(
 ): Promise<{ fingerprint: string; chunks: Chunk[] } | null> {
   const loaded = loadEntryContent(entry);
   if (!loaded) return null;
-  return prepareChunksFromText(entry, resourceId, resourceName, loaded.text, loaded.fingerprint);
+  return prepareChunksFromText(
+    entry,
+    resourceId,
+    resourceName,
+    loaded.text,
+    loaded.fingerprint,
+  );
 }
 
 async function enforceChunkTokenLimit(
@@ -203,7 +262,7 @@ async function enforceChunkTokenLimit(
   const finalized: Chunk[] = [];
 
   for (const chunk of chunks) {
-    const actualTokens = await countTokens(chunk.text);
+    const actualTokens = await countTokens(`${chunk.file_path}\n${chunk.text}`);
     if (actualTokens <= safeTokenLimit) {
       finalized.push({
         ...chunk,
@@ -212,7 +271,11 @@ async function enforceChunkTokenLimit(
       continue;
     }
 
-    const splitChunks = splitOversizedChunk(chunk, actualTokens, safeTokenLimit);
+    const splitChunks = splitOversizedChunk(
+      chunk,
+      actualTokens,
+      safeTokenLimit,
+    );
     if (splitChunks.length === 1 && splitChunks[0]?.text === chunk.text) {
       finalized.push({
         ...chunk,
@@ -221,7 +284,9 @@ async function enforceChunkTokenLimit(
       continue;
     }
 
-    finalized.push(...await enforceChunkTokenLimit(splitChunks, safeTokenLimit));
+    finalized.push(
+      ...(await enforceChunkTokenLimit(splitChunks, safeTokenLimit)),
+    );
   }
 
   return finalized.map((chunk, index) => ({
@@ -236,7 +301,7 @@ function splitOversizedChunk(
   safeTokenLimit: number,
 ): Chunk[] {
   const proportionalMaxChars = Math.floor(
-    (chunk.text.length * safeTokenLimit / Math.max(actualTokens, 1)) * 0.9,
+    ((chunk.text.length * safeTokenLimit) / Math.max(actualTokens, 1)) * 0.9,
   );
   const nextMaxChars = Math.max(
     MIN_SPLIT_CHARS,

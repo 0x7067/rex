@@ -192,7 +192,7 @@ export function registerAdd(program: Command): void {
             },
           });
 
-          const allChunkTexts = indexResult.changedChunkTexts;
+          const allChunkTexts = indexResult.allChunkTexts;
           const summaryBlocks: string[] = [];
           if (allChunkTexts.length > 0) {
             const summaryTypes = ["identity", "architecture", "conventions"];

@@ -1,5 +1,6 @@
 import os from "node:os";
 import { execa } from "execa";
+import { z } from "zod";
 import type { ProviderConfig } from "../core/resource.js";
 import { ProviderError, type ProviderCallOptions } from "./interface.js";
 
@@ -16,7 +17,16 @@ export class ClaudeProvider {
   async call(prompt: string, _options?: ProviderCallOptions): Promise<string> {
     const args = [
       "-p",
-      "--dangerously-skip-permissions",
+      "--tools",
+      "",
+      "--disallowedTools",
+      "mcp__*",
+      "--safe-mode",
+      "--strict-mcp-config",
+      "--mcp-config",
+      '{"mcpServers":{}}',
+      "--settings",
+      '{"disableAllHooks":true}',
       "--output-format",
       "json",
       "--no-session-persistence",
@@ -31,7 +41,7 @@ export class ClaudeProvider {
         timeout: 120_000,
       });
     } catch (err: unknown) {
-      if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      if (err instanceof Error && "code" in err && err.code === "ENOENT") {
         throw new ProviderError(
           "claude binary not found on PATH. Install Claude Code: https://claude.ai/code",
           "claude",
@@ -43,20 +53,34 @@ export class ClaudeProvider {
       );
     }
 
-    // Parse JSON output from claude --output-format json
+    let value: unknown;
     try {
-      const parsed = JSON.parse(result.stdout) as { result?: string; content?: Array<{ type: string; text: string }> };
-      if (parsed.result) return parsed.result;
-      if (parsed.content) {
-        return parsed.content
-          .filter((b) => b.type === "text")
-          .map((b) => b.text)
-          .join("\n");
-      }
+      value = JSON.parse(result.stdout);
     } catch {
-      // Not JSON, return raw
+      throw new ProviderError("claude returned invalid JSON", "claude");
     }
-
-    return result.stdout;
+    const parsed = z
+      .object({
+        result: z.string().optional(),
+        is_error: z.boolean().optional(),
+        content: z
+          .array(z.object({ type: z.string(), text: z.string().optional() }))
+          .optional(),
+      })
+      .safeParse(value);
+    if (!parsed.success || parsed.data.is_error)
+      throw new ProviderError(
+        "claude returned an error or malformed response",
+        "claude",
+      );
+    const answer =
+      parsed.data.result ??
+      parsed.data.content
+        ?.filter((block) => block.type === "text")
+        .map((block) => block.text ?? "")
+        .join("\n");
+    if (!answer?.trim())
+      throw new ProviderError("claude returned no answer", "claude");
+    return answer;
   }
 }

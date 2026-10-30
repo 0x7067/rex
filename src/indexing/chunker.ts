@@ -39,7 +39,8 @@ export function chunkText(
 ): Chunk[] {
   if (text.length === 0) return [];
 
-  const targetChars = options.targetChunkChars ?? TARGET_CHUNK_TOKENS * CHARS_PER_TOKEN;
+  const targetChars =
+    options.targetChunkChars ?? TARGET_CHUNK_TOKENS * CHARS_PER_TOKEN;
   const maxChars = options.maxChunkChars ?? MAX_CHUNK_TOKENS * CHARS_PER_TOKEN;
   const overlapChars = options.overlapChars ?? OVERLAP_TOKENS * CHARS_PER_TOKEN;
   const lineOffset = options.lineOffset ?? 0;
@@ -50,10 +51,16 @@ export function chunkText(
   let index = options.chunkIndexStart ?? 0;
 
   while (start < text.length) {
-    const { end, strongBoundary } = findChunkEnd(text, start, targetChars, maxChars);
+    const { end, strongBoundary } = findChunkEnd(
+      text,
+      start,
+      targetChars,
+      maxChars,
+    );
     const chunkTextValue = text.slice(start, end);
     const startLine = lineOffset + lineNumberAtOffset(lineStarts, start);
-    const endLine = lineOffset + lineNumberAtOffset(lineStarts, Math.max(start, end - 1));
+    const endLine =
+      lineOffset + lineNumberAtOffset(lineStarts, Math.max(start, end - 1));
     chunks.push({
       resource_id: resourceId,
       resource_name: resourceName,
@@ -103,7 +110,8 @@ function findChunkEnd(
 
   const minEnd = Math.min(start + Math.floor(targetChars * 0.6), text.length);
   const hardEnd = Math.min(start + maxChars, text.length);
-  let best: { score: number; end: number; strongBoundary: boolean } | null = null;
+  let best: { score: number; end: number; strongBoundary: boolean } | null =
+    null;
 
   for (let cursor = hardEnd; cursor >= minEnd; cursor--) {
     const score = boundaryScore(text, cursor);
@@ -130,8 +138,12 @@ function boundaryScore(text: string, cursor: number): number {
   const after = text.slice(cursor, Math.min(text.length, cursor + 120));
 
   if (before.endsWith("\n\n")) return 8;
-  if (/\n#{1,6} [^\n]*$/.test(before)) return 7;
-  if (/^\n(?:export |async function |function |class |interface |type |describe\(|it\(|test\()/.test(after)) {
+  if (before.endsWith("\n") && /^#{1,6} /.test(after)) return 7;
+  if (
+    /^\n(?:export |async function |function |class |interface |type |describe\(|it\(|test\()/.test(
+      after,
+    )
+  ) {
     return 6;
   }
   if (/[.!?]["')\]]?\s*$/.test(before)) return 5;

@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { getCurrentIndexProfile } from "../indexing/profile.js";
+import {
+  getCurrentIndexProfile,
+  IndexProfileSchema,
+} from "../indexing/profile.js";
+export { IndexProfileSchema } from "../indexing/profile.js";
 
 export const ResourceTypeSchema = z.enum(["local", "git", "package"]);
 export type ResourceType = z.infer<typeof ResourceTypeSchema>;
@@ -32,12 +36,6 @@ export const SnapshotMetadataSchema = z.discriminatedUnion("type", [
 ]);
 
 export type SnapshotMetadata = z.infer<typeof SnapshotMetadataSchema>;
-
-export const IndexProfileSchema = z.object({
-  embed_model: z.string().min(1),
-  chunker_version: z.string().min(1),
-  index_schema_version: z.string().min(1),
-});
 
 export type IndexProfile = z.infer<typeof IndexProfileSchema>;
 

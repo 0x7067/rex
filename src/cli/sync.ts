@@ -47,7 +47,7 @@ export function registerSync(program: Command): void {
 
       for (const resource of resources) {
         if (isResourceAddLocked(resource.id)) {
-          console.warn(`Skipping "${resource.name}": add is still running.`);
+          console.warn(`Skipping "${resource.name}": another write is still running.`);
           continue;
         }
 

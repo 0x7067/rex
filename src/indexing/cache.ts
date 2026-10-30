@@ -10,8 +10,15 @@ export function getCachedEmbedding(
   if (!fs.existsSync(filePath)) return null;
 
   try {
-    const values = JSON.parse(fs.readFileSync(filePath, "utf-8")) as number[];
-    if (!Array.isArray(values)) return null;
+    const values: unknown = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    if (
+      !Array.isArray(values) ||
+      values.length !== 768 ||
+      !values.every(
+        (value) => typeof value === "number" && Number.isFinite(value),
+      )
+    )
+      return null;
     return new Float32Array(values);
   } catch {
     return null;
@@ -23,6 +30,8 @@ export function setCachedEmbedding(
   chunkHash: string,
   vector: Float32Array,
 ): void {
+  if (vector.length !== 768 || !vector.every(Number.isFinite))
+    throw new Error("Expected a finite 768-dimensional embedding");
   const filePath = cachePath(model, chunkHash);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(Array.from(vector)), "utf-8");

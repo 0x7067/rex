@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { simpleGit } from "simple-git";
 import type { Resource, SnapshotMetadata } from "../core/resource.js";
 import type { FileEntry, ResourceAdapter } from "./adapter.js";
@@ -16,7 +17,11 @@ function normalizeGitUrl(source: string): string {
 }
 
 function repoName(url: string): string {
-  const base = url.replace(/\.git$/, "").split("/").pop() ?? "repo";
+  const base =
+    url
+      .replace(/\.git$/, "")
+      .split("/")
+      .pop() ?? "repo";
   return base;
 }
 
@@ -45,7 +50,12 @@ export class GitAdapter implements ResourceAdapter {
     let lastCommitSha = "";
 
     const name = repoName(normalizedSource);
-    clonePath = path.join(targetDir, name);
+    const sourceHash = crypto
+      .createHash("sha256")
+      .update(normalizedSource)
+      .digest("hex")
+      .slice(0, 16);
+    clonePath = path.join(targetDir, `${name}-${sourceHash}`);
 
     // Ensure the parent snapshots directory exists
     fs.mkdirSync(targetDir, { recursive: true });
@@ -53,10 +63,17 @@ export class GitAdapter implements ResourceAdapter {
     try {
       // Check if clone already exists (guard against simpleGit throwing synchronously)
       const isRepo = fs.existsSync(clonePath)
-        ? await simpleGit(clonePath).checkIsRepo().catch(() => false)
+        ? await simpleGit(clonePath)
+            .checkIsRepo()
+            .catch(() => false)
         : false;
 
       if (isRepo) {
+        const origin = await simpleGit(clonePath).remote(["get-url", "origin"]);
+        if (origin?.trim() !== normalizedSource)
+          throw new Error(
+            "Snapshot remote does not match the requested resource",
+          );
         // Pull latest
         await simpleGit(clonePath).pull();
       } else {
@@ -86,8 +103,12 @@ export class GitAdapter implements ResourceAdapter {
 
   reference(entry: FileEntry, resource: Resource): string {
     if (resource.snapshot_metadata.type === "git") {
-      const host = new URL(resource.snapshot_metadata.remote_url.replace(/\.git$/, "")).hostname;
-      const repoPath = new URL(resource.snapshot_metadata.remote_url.replace(/\.git$/, "")).pathname.replace(/^\//, "");
+      const host = new URL(
+        resource.snapshot_metadata.remote_url.replace(/\.git$/, ""),
+      ).hostname;
+      const repoPath = new URL(
+        resource.snapshot_metadata.remote_url.replace(/\.git$/, ""),
+      ).pathname.replace(/^\//, "");
       return `${resource.name} (${host}/${repoPath}): ${entry.relativePath}`;
     }
     return `${resource.name}: ${entry.relativePath}`;

@@ -42,10 +42,10 @@ describe("createResource", () => {
 
   it("sets index_profile for new resources", () => {
     const r = createResource(validInput);
-    expect(r.index_profile).toEqual({
+    expect(r.index_profile).toMatchObject({
       embed_model: "nomic-ai/nomic-embed-text-v1.5",
-      chunker_version: "boundary-v2",
-      index_schema_version: "2",
+      chunker_version: "boundary-v3",
+      index_schema_version: "3",
     });
   });
 
